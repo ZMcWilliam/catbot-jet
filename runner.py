@@ -34,12 +34,9 @@ def pushToGit():
         if len(diff_list) > 0:
             for diff in diff_list:
                 print(f"\033[1;33m[RUNNER]\033[1;m \033[1;37m   {diff.change_type} -> {diff.new_file}")
-            if ENABLE_GIT:
-                repo.index.commit("CatBot Auto Save")
-                repo.git.push("origin", "dev")
-                print("\033[1;33m[RUNNER]\033[1;m \033[1;37mSaved to git successfully")
-            else:
-                print("\033[1;33m[RUNNER]\033[1;m \033[1;31mGit is disabled, not saving\033[1;37m")
+            repo.index.commit("CatBot Auto Save")
+            repo.git.push("origin", "dev")
+            print("\033[1;33m[RUNNER]\033[1;m \033[1;37mSaved to git successfully")
         else:
             print("\033[1;33m[RUNNER]\033[1;m \033[1;37mNo changes to save to git")
     except Exception as e:
@@ -101,5 +98,8 @@ while True:
             print("\033[1;33m[RUNNER]\033[1;m \033[1;37mAborted quit")
             continue
     if not has_pushed and time.time() - start_time > 10:
-        pushToGit()
+        if ENABLE_GIT:
+            pushToGit()
+        else:
+            print("\033[1;33m[RUNNER]\033[1;m \033[1;31mGit is disabled, not saving\033[1;37m")
         has_pushed = True
