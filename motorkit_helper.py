@@ -13,10 +13,13 @@ conf_tank = {
  
 def motor(num: int) -> adafruit_motor.motor.DCMotor:
     """
-    Returns the motor object for the given number.
+    Returns the motor object for a given number.
 
-    :param num: The motor number (0-3)
-    :return: The motor object
+    Args:
+        num (int): The motor number (0-3).
+
+    Returns:
+        adafruit_motor.motor.DCMotor: The motor object.
     """
     if num == 0:
         return kit.motor1
@@ -34,8 +37,8 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
     Run a motor or a list of motors at a given speed.
 
     Args:
-        targets (Union[int, List[int]]): The motor number(s) (0-3)
-        speed (float): The speed to run the motor(s) at (-100 to 100)
+        targets (Union[int, List[int]]): The motor number(s) (0-3).
+        speed (float): The speed to run the motor(s) at (-100 to 100).
     """
 
     if isinstance(targets, int):
@@ -53,37 +56,41 @@ def run_tank(left: float, right: float, steering: float = 0) -> None:
     """
     Run a tank drive.
 
-    :param left: The speed to run the left motors at (-100 to 100)
-    :param right: The speed to run the right motors at (-100 to 100)
-    :param steering: (Optional) The amount to steer (-100 to 100) (default: 0)
+    Args:
+        left (float): The speed to run the left motors at (-100 to 100).
+        right (float): The speed to run the right motors at (-100 to 100).
+        steering (float, optional): The amount to steer (-100 to 100) (default: 0).
     """
     run([conf_tank["front_l"], conf_tank["back_l"]], left + steering)
     run([conf_tank["front_r"], conf_tank["back_r"]], right - steering)
 
-def stop(num: int, brake: bool = False) -> None:
+def stop(num: int, brake: bool = True) -> None:
     """
     Stop a motor, either coasting or braking.
 
-    :param num: The motor number (0-3)
-    :param brake: Whether to brake the motor (True) or just coast (False)
+    Args:
+        num (int): The motor number (0-3).
+        brake (bool, optional): Whether to brake the motor (True) or just coast (False).
     """
     motor(num).throttle = 0 if brake else None
 
-def stop_all(brake: bool = False) -> None:
+def stop_all(brake: bool = True) -> None:
     """
     Stop all motors, either coasting or braking.
 
-    :param brake: Whether to brake the motors (True) or just coast (False)
+    Args:
+        brake (bool, optional): Whether to brake the motors (True) or just coast (False).
     """
     for i in range(4):
         stop(i, brake)
 
-def stop_bulk(motors: list, brake: bool = False) -> None:
+def stop_bulk(motors: list, brake: bool = True) -> None:
     """
     Stop multiple motors, either coasting or braking.
 
-    :param motors: A list of motor numbers (0-3)
-    :param brake: Whether to brake the motors (True) or just coast (False)
+    Args:
+        motors (List[int]): A list of motor numbers (0-3).
+        brake (bool, optional): Whether to brake the motors (True) or just coast (False).
     """
     for i in motors:
         stop(i, brake)
