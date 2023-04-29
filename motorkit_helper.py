@@ -34,7 +34,7 @@ def motor(num: int) -> adafruit_motor.motor.DCMotor:
 
 def run(targets: Union[int, List[int]], speed: float) -> None:
     """
-    Run a motor or a list of motors at a given speed.
+    Run one motor or multiple motors at a given speed.
 
     Args:
         targets (Union[int, List[int]]): The motor number(s) (0-3).
@@ -54,7 +54,7 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
 
 def run_tank(left: float, right: float, steering: float = 0) -> None:
     """
-    Run a tank drive.
+    Run a tank drive at a given speed and steering.
 
     Args:
         left (float): The speed to run the left motors at (-100 to 100).
@@ -64,15 +64,19 @@ def run_tank(left: float, right: float, steering: float = 0) -> None:
     run([conf_tank["front_l"], conf_tank["back_l"]], left + steering)
     run([conf_tank["front_r"], conf_tank["back_r"]], right - steering)
 
-def stop(num: int, brake: bool = True) -> None:
+def stop(targets: Union[int, List[int]], brake: bool = False) -> None:
     """
-    Stop a motor, either coasting or braking.
+    Stop one motor or multiple motors, either coasting or braking.
 
     Args:
-        num (int): The motor number (0-3).
-        brake (bool, optional): Whether to brake the motor (True) or just coast (False).
+        targets (Union[int, List[int]]): The motor number(s) to stop (0-3) or a list of motor numbers.
+        brake (bool, optional): Whether to brake the motor(s) (True) or just coast (False).
     """
-    motor(num).throttle = 0 if brake else None
+    if isinstance(targets, int):
+        targets = [targets]
+
+    for target in targets:
+        motor(target).throttle = 0 if brake else None
 
 def stop_all(brake: bool = True) -> None:
     """
@@ -81,16 +85,4 @@ def stop_all(brake: bool = True) -> None:
     Args:
         brake (bool, optional): Whether to brake the motors (True) or just coast (False).
     """
-    for i in range(4):
-        stop(i, brake)
-
-def stop_bulk(motors: list, brake: bool = True) -> None:
-    """
-    Stop multiple motors, either coasting or braking.
-
-    Args:
-        motors (List[int]): A list of motor numbers (0-3).
-        brake (bool, optional): Whether to brake the motors (True) or just coast (False).
-    """
-    for i in motors:
-        stop(i, brake)
+    stop([0, 1, 2, 3], brake)
