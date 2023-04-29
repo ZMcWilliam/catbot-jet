@@ -2,3 +2,4 @@ adafruit-circuitpython-motorkit
 adafruit-circuitpython-tca9548a
 smbus2
 piicodev
+git+https://github.com/abelectronicsuk/ABElectronics_Python_Libraries.git#egg=abelectronics
