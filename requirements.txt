@@ -1,3 +1,5 @@
+GitPython
+colorama
 adafruit-circuitpython-motorkit
 adafruit-circuitpython-tca9548a
 smbus2
