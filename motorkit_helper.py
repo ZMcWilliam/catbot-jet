@@ -4,11 +4,14 @@ from typing import Union, List
 
 kit = MotorKit()
 
+# Direction config, such that a positive speed value will be "straight" for each motor
+conf_directions = [-1, 1, -1, 1]
+
 conf_tank = {
-    "front_l": 0,
-    "front_r": 1,
-    "back_l": 2,
-    "back_r": 3
+    "front_l": 1,
+    "front_r": 0,
+    "back_l": 3,
+    "back_r": 2
 }
  
 def motor(num: int) -> adafruit_motor.motor.DCMotor:
@@ -50,19 +53,30 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         speed = -100
 
     for target in targets:
-        motor(target).throttle = speed / 100 
+        motor(target).throttle = speed / 100 * conf_directions[target]
 
-def run_tank(left: float, right: float, steering: float = 0) -> None:
+def run_tank(base_speed: int, max_speed: int, offset: float = 0) -> List[float]:
     """
-    Run a tank drive at a given speed and steering.
+    Run a tank drive at a given speed and offset.
 
     Args:
-        left (float): The speed to run the left motors at (-100 to 100).
-        right (float): The speed to run the right motors at (-100 to 100).
-        steering (float, optional): The amount to steer (-100 to 100) (default: 0).
+        base_speed (int): The base speed to run the motors at (0-100).
+        max_speed (int): The maximum speed to run the motors at (0-100).
+        offset (float, optional): The offset to apply to the motors for steering (default 0)
+
+    Returns:
+        List[float]: The final left and right speeds of the motors.
     """
-    run([conf_tank["front_l"], conf_tank["back_l"]], left + steering)
-    run([conf_tank["front_r"], conf_tank["back_r"]], right - steering)
+    left_speed = base_speed + offset
+    right_speed = base_speed - offset
+
+    left_speed = round(max(min(left_speed, max_speed), -max_speed), 2)
+    right_speed = round(max(min(right_speed, max_speed), -max_speed), 2)
+        
+    run([conf_tank["front_l"], conf_tank["back_l"]], left_speed)
+    run([conf_tank["front_r"], conf_tank["back_r"]], right_speed)
+
+    return [left_speed, right_speed]
 
 def stop(targets: Union[int, List[int]], brake: bool = False) -> None:
     """
