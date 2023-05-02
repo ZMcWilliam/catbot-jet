@@ -3,6 +3,8 @@
 #  > ^ <
 
 import time
+import gpiozero
+import asyncio
 import board
 import adafruit_tca9548a
 import motorkit_helper as m
@@ -16,15 +18,17 @@ las_min = [68, 65, 68, 66, 66, 64, 67, 66]
 las_max = [141, 113, 160, 142, 157, 124, 149, 108]
 
 # Ports for sensors
+PORT_USS_TRIG = 23
+PORT_USS_ECHO = 24
 PORT_COL_L = 5
 PORT_COL_R = 4
 PORT_LINE = [8, 7, 6, 5, 4, 3, 2, 1] # ADC Ports, left to right when robot is facing forward
 
 # Constants for PID control
-KP = 0.05  # Proportional gain
+KP = 0.13  # Proportional gain
 KI = 0  # Integral gain
-KD = 0.01  # Derivative gain
-follower_speed = 40
+KD = 0.10  # Derivative gain
+follower_speed = 50
 
 # Variables for PID control
 pid_error_sum = 0
@@ -52,7 +56,8 @@ latest_data = {
             "val": 0
         },
         "hue": "Unk"
-    }
+    },
+    "distance": 0,
 }
 
 debug_info = {
@@ -74,6 +79,10 @@ itr_stats = {
         "count": 0,
         "time": 0,
     },
+    "distance": {
+        "count": 0,
+        "time": 0,
+    }
 }
 
 def update_itr_stat(stat: str, auto_reset: int = False) -> None:
@@ -173,6 +182,44 @@ def check_col_green(port: int, threshold: float = 0.5) -> bool:
     data = latest_data["col_l" if port == PORT_COL_L else "col_r"]
     return data["hue"] == "green" and data["hsv"]["sat"] > threshold
 
+
+USS_TRIG = gpiozero.OutputDevice(PORT_USS_TRIG, active_high=True, initial_value=False)
+USS_ECHO = gpiozero.InputDevice(PORT_USS_ECHO)
+
+async def measure_distance(max_distance: float = 100) -> float:
+    """
+    Measures the distance using the RCWL-1601 ultrasonic sensor.
+
+    Args:
+        max_distance (float, optional): The maximum distance to measure in centimeters. Defaults to 200.
+
+    Returns:
+        float: The measured distance in centimeters.
+    """
+    USS_TRIG.on()
+    await asyncio.sleep(0.00001)
+    USS_TRIG.off()
+
+    pulse_start = time.monotonic()
+    while USS_ECHO.is_active == False:
+        if time.monotonic() - pulse_start > max_distance / 17150:
+            return max_distance
+        pulse_start = time.monotonic()
+
+    pulse_end = time.monotonic()
+    while USS_ECHO.is_active == True:
+        if time.monotonic() - pulse_end > max_distance / 17150:
+            return max_distance
+        pulse_end = time.monotonic()
+
+    pulse_duration = pulse_end - pulse_start
+    distance = pulse_duration * 17150
+    distance = min(distance, max_distance)
+    distance = round(distance, 2)
+
+    latest_data["distance"] = distance
+    return distance
+
 def read_line() -> List[List[float]]:
     """
     Reads reflectivity data from the ADCPi channels and scales it.
@@ -261,7 +308,7 @@ def follow_line() -> None:
     debug_info["steering"] = steering
     debug_info["speeds"] = m.run_tank(follower_speed, 100, steering)
 
-def monitor_line_async() -> None:
+def monitor_line_thread() -> None:
     """
     Monitors the line in a separate thread.
     """
@@ -270,7 +317,7 @@ def monitor_line_async() -> None:
         update_itr_stat("line")
         read_line()
     
-def monitor_col_async() -> None:
+def monitor_col_thread() -> None:
     """
     Monitors the color sensors in a separate thread.
     """
@@ -280,13 +327,34 @@ def monitor_col_async() -> None:
         read_col(PORT_COL_L)
         read_col(PORT_COL_R)
 
-line_thread = threading.Thread(target=monitor_line_async)
+async def monitor_uss_async() -> None:
+    """
+    Monitors the ultrasonic sensor asynchronously.
+    """
+    global latest_data
+    while True:
+        update_itr_stat("distance")
+        await measure_distance()
+        await asyncio.sleep(0.02)
+
+def monitor_uss_thread() -> None:
+    """
+    Monitors the ultrasonic sensor in a separate thread.
+    """
+    asyncio.run(monitor_uss_async())
+    
+
+line_thread = threading.Thread(target=monitor_line_thread)
 line_thread.daemon = True
 line_thread.start()
 
-col_thread = threading.Thread(target=monitor_col_async)
+col_thread = threading.Thread(target=monitor_col_thread)
 col_thread.daemon = True
 col_thread.start()
+
+uss_thread = threading.Thread(target=monitor_uss_thread)
+uss_thread.daemon = True
+uss_thread.start()
 
 while True:
     update_itr_stat("master", 1000)
@@ -295,9 +363,10 @@ while True:
     r_green = check_col_green(PORT_COL_R)
 
     follow_line()
-    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}\t"
+    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance')}\t"
         + f"GL: {l_green} ({latest_data['col_l']['hue']}, {int(latest_data['col_l']['hsv']['sat'])})\t"
         + f"GR: {r_green} ({latest_data['col_r']['hue']}, {int(latest_data['col_r']['hsv']['sat'])})\t"
+        + f"USS: {latest_data['distance']}\t"
         + f"\t Pos: {int(debug_info['pos'])},"
         + f"\t Steering: {int(debug_info['steering'])},"
         + f"\t Speeds: {debug_info['speeds']},"
