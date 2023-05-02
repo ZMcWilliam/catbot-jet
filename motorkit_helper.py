@@ -1,4 +1,5 @@
 import adafruit_motor.motor
+import time
 from adafruit_motorkit import MotorKit
 from typing import Union, List
 
@@ -55,9 +56,9 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
     for target in targets:
         motor(target).throttle = speed / 100 * conf_directions[target]
 
-def run_tank(base_speed: int, max_speed: int, offset: float = 0) -> List[float]:
+def run_steer(base_speed: int, max_speed: int, offset: float = 0) -> List[float]:
     """
-    Run a tank drive at a given speed and offset.
+    Run a steering drive at a given speed and offset.
 
     Args:
         base_speed (int): The base speed to run the motors at (0-100).
@@ -73,10 +74,33 @@ def run_tank(base_speed: int, max_speed: int, offset: float = 0) -> List[float]:
     left_speed = round(max(min(left_speed, max_speed), -max_speed), 2)
     right_speed = round(max(min(right_speed, max_speed), -max_speed), 2)
         
+    run_tank(left_speed, right_speed)
+
+    return [left_speed, right_speed]
+
+def run_tank(left_speed: int, right_speed: int) -> None:
+    """
+    Run a tank drive at a given speed.
+
+    Args:
+        left_speed (int): The speed to run the left motors at (-100 to 100).
+        right_speed (int): The speed to run the right motors at (-100 to 100).
+    """
     run([conf_tank["front_l"], conf_tank["back_l"]], left_speed)
     run([conf_tank["front_r"], conf_tank["back_r"]], right_speed)
 
-    return [left_speed, right_speed]
+def run_tank_for_time(left_speed: int, right_speed: int, duration: float) -> None:
+    """
+    Run a tank drive at a given speed for a given duration.
+
+    Args:
+        left_speed (int): The speed to run the left motors at (-100 to 100).
+        right_speed (int): The speed to run the right motors at (-100 to 100).
+        duration (float): The duration to run the motors for (in milliseconds).
+    """
+    run_tank(left_speed, right_speed)
+    time.sleep(duration / 1000)
+    stop_all()
 
 def stop(targets: Union[int, List[int]], brake: bool = False) -> None:
     """

@@ -306,7 +306,7 @@ def follow_line() -> None:
     steering = KP * error + KI * pid_error_sum + KD * error_diff
 
     debug_info["steering"] = steering
-    debug_info["speeds"] = m.run_tank(follower_speed, 100, steering)
+    debug_info["speeds"] = m.run_steer(follower_speed, 100, steering)
 
 def monitor_line_thread() -> None:
     """
