@@ -6,6 +6,7 @@ import time
 import board
 import adafruit_tca9548a
 import motorkit_helper as m
+import threading
 from PiicoDev_VEML6040 import PiicoDev_VEML6040
 from ADCPi import ADCPi
 from typing import Union, List, Tuple, Dict
@@ -28,6 +29,83 @@ follower_speed = 40
 # Variables for PID control
 pid_error_sum = 0
 pid_last_error = 0
+
+start_time = time.time()
+
+latest_data = {
+    "line": {
+        "raw": [0] * 8,
+        "scaled": [0] * 8,
+    },
+    "col_l": {
+        "hsv": {
+            "hue": 0,
+            "sat": 0,
+            "val": 0
+        },
+        "hue": "Unk"
+    },
+    "col_r": {
+        "hsv": {
+            "hue": 0,
+            "sat": 0,
+            "val": 0
+        },
+        "hue": "Unk"
+    }
+}
+
+debug_info = {
+    "steering": 0,
+    "pos": 0,
+    "speeds": [0, 0],
+}
+
+itr_stats = {
+    "master": {
+        "count": 0,
+        "time": 0,
+    },
+    "line": {
+        "count": 0,
+        "time": 0,
+    },
+    "cols": {
+        "count": 0,
+        "time": 0,
+    },
+}
+
+def update_itr_stat(stat: str, auto_reset: int = False) -> None:
+    """
+    Updates the specified iteration stat.
+
+    Args:
+        stat (str): The stat to update.
+        auto_reset (int, optional): The number of iterations before the stat is reset. Defaults to False.
+    """
+    if itr_stats[stat]["time"] == 0:
+        itr_stats[stat]["time"] = time.time()
+    
+    if auto_reset != False and itr_stats[stat]["count"] % auto_reset == 0:
+        itr_stats[stat]["time"] = time.time()
+        itr_stats[stat]["count"] = 0
+    
+    itr_stats[stat]["count"] += 1
+
+def get_itr_stat(stat: str, decimals: int = 0) -> float:
+    """
+    Gets the current iteration stat, in iterations per second
+
+    Args:
+        stat (str): The stat to retieve.
+        decimals (int, optional): The number of decimal places to round to. Defaults to 0.
+
+    Returns:
+        float: The stat, in iterations per second.
+    """
+    val = itr_stats[stat]["count"] / (time.time() - itr_stats[stat]["time"])
+    return round(val, decimals) if decimals > 0 else int(val)
 
 adc = ADCPi(0x68, 0x69, 12)
 i2c = board.I2C()
@@ -78,7 +156,22 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
         "hue": col_l.classifyHue({"red":0,"yellow":60,"green":120,"cyan":180,"blue":240,"magenta":300})
     }
     mx_remove_locks()
+    latest_data["col_l" if port == PORT_COL_L else "col_r"] = data
     return data
+
+def check_col_green(port: int, threshold: float = 0.5) -> bool:
+    """
+    Checks if the color sensor on the specified port is detecting green.
+
+    Args:
+        port (int): The port number of the color sensor.
+        threshold (float, optional): The threshold for the green saturation value. Defaults to 0.5.
+
+    Returns:
+        bool: True if the color sensor is detecting green, False otherwise.
+    """
+    data = latest_data["col_l" if port == PORT_COL_L else "col_r"]
+    return data["hue"] == "green" and data["hsv"]["sat"] > threshold
 
 def read_line() -> List[List[float]]:
     """
@@ -96,6 +189,8 @@ def read_line() -> List[List[float]]:
         data_scaled[i] = (data[i] - las_min[i]) / (las_max[i] - las_min[i])
         data_scaled[i] = round(max(0, min(100, data_scaled[i] * 100)), 1)
 
+    latest_data["line"]["raw"] = data
+    latest_data["line"]["scaled"] = data_scaled
     return [data, data_scaled]
 
 last_pos_value = 0
@@ -140,17 +235,16 @@ def calculate_position(values: List[float], invert: int = False) -> float:
             return (len(values) - 1) * 1000
 
     last_pos_value = avg / sum_values
+    debug_info["pos"] = last_pos_value
     return last_pos_value
 
-while True:
-    l = read_col(PORT_COL_L)
-    r = read_col(PORT_COL_R)
-    line = read_line()
+def follow_line() -> None:
+    """
+    Follows a line using PID control.
+    """
+    global pid_error_sum, pid_last_error
 
-    pos = calculate_position(line[1])
-
-    # Calculate the error as the difference between the desired position (3.5) and the weighted average
-    # error = sum([(i - 3.5) * line[1][i] for i in range(8)])
+    pos = calculate_position(latest_data["line"]["scaled"])
     error = pos - 3500
 
     # Update the error sum and limit it within a reasonable range
@@ -164,11 +258,47 @@ while True:
     # Calculate the steering value using PID control
     steering = KP * error + KI * pid_error_sum + KD * error_diff
 
-    # # Limit the steering value within the valid range
-    # steering = max(-100, min(100, steering))
+    debug_info["steering"] = steering
+    debug_info["speeds"] = m.run_tank(follower_speed, 100, steering)
 
-    # Provide the calculated steering value to the run_tank function
-    speeds = m.run_tank(follower_speed, 100, steering)
+def monitor_line_async() -> None:
+    """
+    Monitors the line in a separate thread.
+    """
+    global latest_data
+    while True:
+        update_itr_stat("line")
+        read_line()
+    
+def monitor_col_async() -> None:
+    """
+    Monitors the color sensors in a separate thread.
+    """
+    global latest_data
+    while True:
+        update_itr_stat("cols")
+        read_col(PORT_COL_L)
+        read_col(PORT_COL_R)
 
-    # Print the line color and steering value for debugging
-    print(f"CL: {l['hue']} ({int(l['hsv']['hue'])})\tCR: {r['hue']} ({int(r['hsv']['hue'])})\tERR: {int(error)}\tSTEER: {round(steering, 1)}\tSPEEDS: {speeds}\tLINE: {line[1]}")
+line_thread = threading.Thread(target=monitor_line_async)
+line_thread.daemon = True
+line_thread.start()
+
+col_thread = threading.Thread(target=monitor_col_async)
+col_thread.daemon = True
+col_thread.start()
+
+while True:
+    update_itr_stat("master", 1000)
+
+    l_green = check_col_green(PORT_COL_L)
+    r_green = check_col_green(PORT_COL_R)
+
+    follow_line()
+    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}\t"
+        + f"GL: {l_green} ({latest_data['col_l']['hue']}, {int(latest_data['col_l']['hsv']['sat'])})\t"
+        + f"GR: {r_green} ({latest_data['col_r']['hue']}, {int(latest_data['col_r']['hsv']['sat'])})\t"
+        + f"\t Pos: {int(debug_info['pos'])},"
+        + f"\t Steering: {int(debug_info['steering'])},"
+        + f"\t Speeds: {debug_info['speeds']},"
+        + f"\t Line: {latest_data['line']['scaled']}")
