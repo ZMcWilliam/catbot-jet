@@ -307,6 +307,45 @@ def follow_line() -> None:
     debug_info["steering"] = steering
     debug_info["speeds"] = m.run_steer(follower_speed, 100, steering)
 
+
+def avoid_obstacle() -> None:
+    """
+    Performs obstacle avoidance when an obstacle is detected.
+    """
+    # Step 1: Stop the robot
+    m.stop_all()
+    time.sleep(1)
+
+    # Step 2: Rotate until the side ultrasonic sensor detects the obstacle
+    while True:
+        distance = latest_data["distance_side"]
+        if distance > obstacle_threshold + 5:
+            m.run_tank(-50, 50)  # Rotate left
+        else:
+            m.stop_all()
+            break
+
+    time.sleep(1)
+
+    # Step 3: Move around the obstacle while maintaining a constant distance
+    while True:
+        # Calculate the difference between the current distance and the desired distance
+        distance_diff = latest_data["distance_side"] - obstacle_distance
+
+        # Adjust the robot's position and orientation to maintain the desired distance
+        if distance_diff > 20: # Robot has lost track of the obstacle
+            print(f"A    {distance_diff}")
+            m.run_tank(80, -40)
+        elif distance_diff > 5:  # Robot is too far from the obstacle
+            print(f"BB   {distance_diff}")
+            m.run_tank(80, -20)
+        elif distance_diff > -5:  # Robot is at the desired distance
+            print(f"CCC  {distance_diff}")
+            m.run_tank(80, 40)
+        elif distance_diff < -5:  # Robot is too close to the obstacle
+            print(f"DDDD {distance_diff}")
+            m.run_tank(80, 60)
+
 class Monitor:
     """
     A class that monitors a function in a separate thread.
@@ -379,7 +418,11 @@ while True:
     l_green = check_col_green(PORT_COL_L)
     r_green = check_col_green(PORT_COL_R)
 
-    follow_line()
+    if latest_data["distance_front"] < obstacle_threshold and latest_data["distance_front"] > 0:
+        print(f"Obstacle detected at {latest_data['distance_front']} cm")
+        avoid_obstacle()
+    else:
+        follow_line()
 
     print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
         + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
