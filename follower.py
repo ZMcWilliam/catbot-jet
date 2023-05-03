@@ -18,8 +18,14 @@ las_min = [68, 65, 68, 66, 66, 64, 67, 66]
 las_max = [141, 113, 160, 142, 157, 124, 149, 108]
 
 # Ports for sensors
-PORT_USS_TRIG = 23
-PORT_USS_ECHO = 24
+PORT_USS_TRIG = {
+    "front": 23,
+    "side": 27,
+}
+PORT_USS_ECHO = {
+    "front": 24,
+    "side": 22,
+}
 PORT_COL_L = 5
 PORT_COL_R = 4
 PORT_LINE = [8, 7, 6, 5, 4, 3, 2, 1] # ADC Ports, left to right when robot is facing forward
@@ -33,6 +39,10 @@ follower_speed = 50
 # Variables for PID control
 pid_error_sum = 0
 pid_last_error = 0
+
+# Constants for obstacle avoidance
+obstacle_threshold = 10  # Distance threshold to detect an obstacle
+obstacle_distance = 10  # Desired distance to maintain from the obstacle
 
 start_time = time.time()
 
@@ -57,7 +67,8 @@ latest_data = {
         },
         "hue": "Unk"
     },
-    "distance": 0,
+    "distance_front": 0,
+    "distance_side": 0,
 }
 
 debug_info = {
@@ -79,10 +90,14 @@ itr_stats = {
         "count": 0,
         "time": 0,
     },
-    "distance": {
+    "distance_front": {
         "count": 0,
         "time": 0,
-    }
+    },
+    "distance_side": {
+        "count": 0,
+        "time": 0,
+    },
 }
 
 def update_itr_stat(stat: str, auto_reset: int = False) -> None:
@@ -183,31 +198,32 @@ def check_col_green(port: int, threshold: float = 0.5) -> bool:
     return data["hue"] == "green" and data["hsv"]["sat"] > threshold
 
 
-USS_TRIG = gpiozero.OutputDevice(PORT_USS_TRIG, active_high=True, initial_value=False)
-USS_ECHO = gpiozero.InputDevice(PORT_USS_ECHO)
+USS_TRIG = { device: gpiozero.OutputDevice(device_pin, active_high=True, initial_value=False) for device, device_pin in PORT_USS_TRIG.items() }
+USS_ECHO = { device: gpiozero.InputDevice(device_pin) for device, device_pin in PORT_USS_ECHO.items() }
 
-async def measure_distance(max_distance: float = 100) -> float:
+async def measure_distance(device: str = "front", max_distance: float = 100) -> float:
     """
     Measures the distance using the RCWL-1601 ultrasonic sensor.
 
     Args:
+        device (str, optional): The device to measure the distance from. Defaults to "front".
         max_distance (float, optional): The maximum distance to measure in centimeters. Defaults to 200.
 
     Returns:
         float: The measured distance in centimeters.
     """
-    USS_TRIG.on()
+    USS_TRIG[device].on()
     await asyncio.sleep(0.00001)
-    USS_TRIG.off()
+    USS_TRIG[device].off()
 
     pulse_start = time.monotonic()
-    while USS_ECHO.is_active == False:
+    while USS_ECHO[device].is_active == False:
         if time.monotonic() - pulse_start > max_distance / 17150:
             return max_distance
         pulse_start = time.monotonic()
 
     pulse_end = time.monotonic()
-    while USS_ECHO.is_active == True:
+    while USS_ECHO[device].is_active == True:
         if time.monotonic() - pulse_end > max_distance / 17150:
             return max_distance
         pulse_end = time.monotonic()
@@ -217,7 +233,7 @@ async def measure_distance(max_distance: float = 100) -> float:
     distance = min(distance, max_distance)
     distance = round(distance, 2)
 
-    latest_data["distance"] = distance
+    latest_data["distance_" + device] = distance
     return distance
 
 def read_line() -> List[List[float]]:
@@ -327,21 +343,30 @@ def monitor_col_thread() -> None:
         read_col(PORT_COL_L)
         read_col(PORT_COL_R)
 
-async def monitor_uss_async() -> None:
+async def monitor_uss_async(device: str) -> None:
     """
-    Monitors the ultrasonic sensor asynchronously.
+    Monitors the ultrasonic sensor in a separate thread.
+
+    Args:
+        device (str): The device to monitor. Can be either "front" or "side".
     """
     global latest_data
     while True:
-        update_itr_stat("distance")
-        await measure_distance()
+        update_itr_stat("distance_" + device)
+        await measure_distance(device)
         await asyncio.sleep(0.02)
 
-def monitor_uss_thread() -> None:
+def monitor_uss_front_thread() -> None:
     """
-    Monitors the ultrasonic sensor in a separate thread.
+    Monitors the front ultrasonic sensor in a separate thread.
     """
-    asyncio.run(monitor_uss_async())
+    asyncio.run(monitor_uss_async("front"))
+
+def monitor_uss_side_thread() -> None:
+    """
+    Monitors the side ultrasonic sensor in a separate thread.
+    """
+    asyncio.run(monitor_uss_async("side"))
     
 
 line_thread = threading.Thread(target=monitor_line_thread)
@@ -352,10 +377,15 @@ col_thread = threading.Thread(target=monitor_col_thread)
 col_thread.daemon = True
 col_thread.start()
 
-uss_thread = threading.Thread(target=monitor_uss_thread)
-uss_thread.daemon = True
-uss_thread.start()
+uss_front_thread = threading.Thread(target=monitor_uss_front_thread)
+uss_front_thread.daemon = True
+uss_front_thread.start()
 
+uss_side_thread = threading.Thread(target=monitor_uss_side_thread)
+uss_side_thread.daemon = True
+uss_side_thread.start()
+
+print("Starting Bot")
 while True:
     update_itr_stat("master", 1000)
 
@@ -363,10 +393,11 @@ while True:
     r_green = check_col_green(PORT_COL_R)
 
     follow_line()
-    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance')}\t"
-        + f"GL: {l_green} ({latest_data['col_l']['hue']}, {int(latest_data['col_l']['hsv']['sat'])})\t"
-        + f"GR: {r_green} ({latest_data['col_r']['hue']}, {int(latest_data['col_r']['hsv']['sat'])})\t"
-        + f"USS: {latest_data['distance']}\t"
+
+    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+        + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {int(latest_data['col_l']['hsv']['sat'])})"
+        + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {int(latest_data['col_r']['hsv']['sat'])})"
+        + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
         + f"\t Pos: {int(debug_info['pos'])},"
         + f"\t Steering: {int(debug_info['steering'])},"
         + f"\t Speeds: {debug_info['speeds']},"
