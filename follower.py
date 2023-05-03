@@ -78,26 +78,8 @@ debug_info = {
 }
 
 itr_stats = {
-    "master": {
-        "count": 0,
-        "time": 0,
-    },
-    "line": {
-        "count": 0,
-        "time": 0,
-    },
-    "cols": {
-        "count": 0,
-        "time": 0,
-    },
-    "distance_front": {
-        "count": 0,
-        "time": 0,
-    },
-    "distance_side": {
-        "count": 0,
-        "time": 0,
-    },
+    name: {"count": 0, "time": 0, "paused": False}
+    for name in ["master", "line", "cols", "distance_front", "distance_side"]
 }
 
 def update_itr_stat(stat: str, auto_reset: int = False) -> None:
@@ -175,9 +157,10 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
             - "hue" (str): The classified hue of the color.
     """
     mx_select(port)
+    selected_sensor = col_l if port == PORT_COL_L else col_r
     data = {
-        "hsv": col_l.readHSV(),
-        "hue": col_l.classifyHue({"red":0,"yellow":60,"green":120,"cyan":180,"blue":240,"magenta":300})
+        "hsv": selected_sensor.readHSV(),
+        "hue": selected_sensor.classifyHue({"red":0,"yellow":60,"green":120,"cyan":180,"blue":240,"magenta":300})
     }
     mx_remove_locks()
     latest_data["col_l" if port == PORT_COL_L else "col_r"] = data
@@ -195,7 +178,7 @@ def check_col_green(port: int, threshold: float = 0.5) -> bool:
         bool: True if the color sensor is detecting green, False otherwise.
     """
     data = latest_data["col_l" if port == PORT_COL_L else "col_r"]
-    return data["hue"] == "green" and data["hsv"]["sat"] > threshold
+    return data["hue"] == "green" and data["hsv"]["sat"] >= threshold
 
 
 USS_TRIG = { device: gpiozero.OutputDevice(device_pin, active_high=True, initial_value=False) for device, device_pin in PORT_USS_TRIG.items() }
@@ -324,66 +307,70 @@ def follow_line() -> None:
     debug_info["steering"] = steering
     debug_info["speeds"] = m.run_steer(follower_speed, 100, steering)
 
-def monitor_line_thread() -> None:
+class Monitor:
     """
-    Monitors the line in a separate thread.
-    """
-    global latest_data
-    while True:
-        update_itr_stat("line")
-        read_line()
-    
-def monitor_col_thread() -> None:
-    """
-    Monitors the color sensors in a separate thread.
-    """
-    global latest_data
-    while True:
-        update_itr_stat("cols")
-        read_col(PORT_COL_L)
-        read_col(PORT_COL_R)
-
-async def monitor_uss_async(device: str) -> None:
-    """
-    Monitors the ultrasonic sensor in a separate thread.
+    A class that monitors a function in a separate thread.
 
     Args:
-        device (str): The device to monitor. Can be either "front" or "side".
+        loop_function (function): The function to monitor.
+        itr_stat (str): The name of the iteration stat to update.
+        timeout (float): The time to wait between each iteration of the loop.
+        is_async (bool): Whether the function is a coroutine and should be awaited.
     """
-    global latest_data
-    while True:
-        update_itr_stat("distance_" + device)
-        await measure_distance(device)
-        await asyncio.sleep(0.02)
+    def __init__(self, loop_function, itr_stat, timeout=0, is_async=False):
+        self.loop_function = loop_function
+        self.itr_stat = itr_stat
+        self.timeout = timeout
+        self.is_async = is_async
 
-def monitor_uss_front_thread() -> None:
-    """
-    Monitors the front ultrasonic sensor in a separate thread.
-    """
-    asyncio.run(monitor_uss_async("front"))
+        self.paused = False
+        self.pause_event = threading.Event()
 
-def monitor_uss_side_thread() -> None:
-    """
-    Monitors the side ultrasonic sensor in a separate thread.
-    """
-    asyncio.run(monitor_uss_async("side"))
-    
+        self.thread = threading.Thread(target=self.run_loop)
+        self.thread.daemon = True
+        self.thread.start()
 
-line_thread = threading.Thread(target=monitor_line_thread)
-line_thread.daemon = True
-line_thread.start()
+    def run_loop(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-col_thread = threading.Thread(target=monitor_col_thread)
-col_thread.daemon = True
-col_thread.start()
+        loop.run_until_complete(self._monitor_loop())
 
-uss_front_thread = threading.Thread(target=monitor_uss_front_thread)
-uss_front_thread.daemon = True
-uss_front_thread.start()
+    async def _monitor_loop(self):
+        while True:
+            if not self.paused:
+                update_itr_stat(self.itr_stat)
 
-uss_side_thread = threading.Thread(target=monitor_uss_side_thread)
-uss_side_thread.daemon = True
-uss_side_thread.start()
+                # Await function if it's async, otherwise just call it
+                # Bear in mind, we may be using a lambda function which includes an async function
+                if asyncio.iscoroutinefunction(self.loop_function) or self.is_async:
+                    await self.loop_function()
+                else:
+                    self.loop_function()
+
+                if self.timeout > 0:
+                    await asyncio.sleep(self.timeout)
+            else:
+                self.pause_event.wait()
+
+    def pause(self):
+        itr_stats[self.itr_stat]["paused"] = True
+        self.paused = True
+
+    def resume(self):
+        self.paused = False
+        self.pause_event.set()
+        self.pause_event.clear()
+        itr_stats[self.itr_stat]["paused"] = False
+        update_itr_stat(self.itr_stat, 1) # Reset the iteration counter as the loop was paused
+
+    def stop(self):
+        self.thread.stop()
+
+line_monitor = Monitor(read_line, "line")
+cols_monitor = Monitor(lambda: (read_col(PORT_COL_L), read_col(PORT_COL_R)), "cols")
+uss_front_monitor = Monitor(lambda: measure_distance("front"), "distance_front", timeout=0.02, is_async=True)
+uss_side_monitor = Monitor(lambda: measure_distance("side"), "distance_side", timeout=0.02, is_async=True)
 
 print("Starting Bot")
 while True:
@@ -395,8 +382,8 @@ while True:
     follow_line()
 
     print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
-        + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {int(latest_data['col_l']['hsv']['sat'])})"
-        + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {int(latest_data['col_r']['hsv']['sat'])})"
+        + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
+        + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
         + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
         + f"\t Pos: {int(debug_info['pos'])},"
         + f"\t Steering: {int(debug_info['steering'])},"
