@@ -42,6 +42,11 @@ pid_last_error = 0
 
 obstacle_threshold = 4  # Distance threshold to detect an obstacle
 
+col_thresholds = {
+    "green": 0.55,
+    "red": 0.65,
+}
+
 start_time = time.time()
 
 latest_data = {
@@ -55,7 +60,8 @@ latest_data = {
             "sat": 0,
             "val": 0
         },
-        "hue": "Unk"
+        "hue": "Unk",
+        "eval": None,
     },
     "col_r": {
         "hsv": {
@@ -63,7 +69,8 @@ latest_data = {
             "sat": 0,
             "val": 0
         },
-        "hue": "Unk"
+        "hue": "Unk",
+        "eval": None,
     },
     "distance_front": 0,
     "distance_side": 0,
@@ -158,26 +165,17 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
     selected_sensor = col_l if port == PORT_COL_L else col_r
     data = {
         "hsv": selected_sensor.readHSV(),
-        "hue": selected_sensor.classifyHue({"red":0,"yellow":60,"green":120,"cyan":180,"blue":240,"magenta":300})
+        "hue": selected_sensor.classifyHue({"red":0,"yellow":60,"green":120,"cyan":180,"blue":240,"magenta":300}),
+        "eval": None,
     }
+
+    for col_name, col_threshold in col_thresholds.items():
+        if data["hue"] == col_name and data["hsv"]["sat"] >= col_threshold:
+            data["eval"] = col_name
+        
     mx_remove_locks()
     latest_data["col_l" if port == PORT_COL_L else "col_r"] = data
     return data
-
-def check_col_green(port: int, threshold: float = 0.5) -> bool:
-    """
-    Checks if the color sensor on the specified port is detecting green.
-
-    Args:
-        port (int): The port number of the color sensor.
-        threshold (float, optional): The threshold for the green saturation value. Defaults to 0.5.
-
-    Returns:
-        bool: True if the color sensor is detecting green, False otherwise.
-    """
-    data = latest_data["col_l" if port == PORT_COL_L else "col_r"]
-    return data["hue"] == "green" and data["hsv"]["sat"] >= threshold
-
 
 USS_TRIG = { device: gpiozero.OutputDevice(device_pin, active_high=True, initial_value=False) for device, device_pin in PORT_USS_TRIG.items() }
 USS_ECHO = { device: gpiozero.InputDevice(device_pin) for device, device_pin in PORT_USS_ECHO.items() }
@@ -451,9 +449,9 @@ while True:
         else:
             follow_line()
 
-        print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
-            + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
-            + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
+        print(f"ITR: M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}, U{get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+            + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
+            + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
             + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
             + f"\t Pos: {int(debug_info['pos'])},"
             + f"\t Steering: {int(debug_info['steering'])},"
