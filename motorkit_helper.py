@@ -56,7 +56,7 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
     for target in targets:
         motor(target).throttle = speed / 100 * conf_directions[target]
 
-def run_steer(base_speed: int, max_speed: int, offset: float = 0) -> List[float]:
+def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = [-15, 25]) -> List[float]:
     """
     Run a steering drive at a given speed and offset.
 
@@ -64,6 +64,7 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0) -> List[float]
         base_speed (int): The base speed to run the motors at (0-100).
         max_speed (int): The maximum speed to run the motors at (0-100).
         offset (float, optional): The offset to apply to the motors for steering (default 0)
+        skip_range (List[int], optional): The range of speeds to skip when calculating an offset (default [-30, 30]) - Use False to disable
 
     Returns:
         List[float]: The final left and right speeds of the motors.
@@ -71,6 +72,16 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0) -> List[float]
     left_speed = base_speed + offset
     right_speed = base_speed - offset
 
+    if skip_range:
+        if skip_range[0] < left_speed < 0:
+            left_speed = skip_range[0]
+        elif skip_range[1] > left_speed >= 0:
+            left_speed = skip_range[1]
+        if skip_range[0] < right_speed < 0:
+            right_speed = skip_range[0]
+        elif skip_range[1] > right_speed >= 0:
+            right_speed = skip_range[1]
+            
     left_speed = round(max(min(left_speed, max_speed), -max_speed), 2)
     right_speed = round(max(min(right_speed, max_speed), -max_speed), 2)
         

@@ -31,10 +31,10 @@ PORT_COL_R = 4
 PORT_LINE = [8, 7, 6, 5, 4, 3, 2, 1] # ADC Ports, left to right when robot is facing forward
 
 # Constants for PID control
-KP = 0.13  # Proportional gain
+KP = 0.05  # Proportional gain
 KI = 0  # Integral gain
-KD = 0.10  # Derivative gain
-follower_speed = 50
+KD = 0.2  # Derivative gain
+follower_speed = 40
 
 # Variables for PID control
 pid_error_sum = 0
