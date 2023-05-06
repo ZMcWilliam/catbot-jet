@@ -40,9 +40,7 @@ follower_speed = 40
 pid_error_sum = 0
 pid_last_error = 0
 
-# Constants for obstacle avoidance
-obstacle_threshold = 10  # Distance threshold to detect an obstacle
-obstacle_distance = 10  # Desired distance to maintain from the obstacle
+obstacle_threshold = 4  # Distance threshold to detect an obstacle
 
 start_time = time.time()
 
@@ -312,39 +310,67 @@ def avoid_obstacle() -> None:
     """
     Performs obstacle avoidance when an obstacle is detected.
     """
+    obstacle_maintain_distance = 9  # Desired distance to maintain from the obstacle
+
     # Step 1: Stop the robot
     m.stop_all()
-    time.sleep(1)
+    time.sleep(0.3)
+    m.run_tank_for_time(-50, -50, 200)
+    time.sleep(0.2)
 
     # Step 2: Rotate until the side ultrasonic sensor detects the obstacle
     while True:
         distance = latest_data["distance_side"]
-        if distance > obstacle_threshold + 5:
+        print("Aligning obstacle on side: " + str(distance) + " cm")
+        if distance > obstacle_threshold + 8:
             m.run_tank(-50, 50)  # Rotate left
         else:
             m.stop_all()
+            time.sleep(0.1)
+            m.run_tank_for_time(-50, 50, 300)
             break
 
     time.sleep(1)
 
+    lost_track_counter = 0
+
     # Step 3: Move around the obstacle while maintaining a constant distance
     while True:
         # Calculate the difference between the current distance and the desired distance
-        distance_diff = latest_data["distance_side"] - obstacle_distance
+        distance_diff = round(latest_data["distance_side"] - obstacle_maintain_distance, 2)
+
+        # print("Distance diff: " + str(distance_diff) + " cm")
 
         # Adjust the robot's position and orientation to maintain the desired distance
-        if distance_diff > 20: # Robot has lost track of the obstacle
-            print(f"A    {distance_diff}")
-            m.run_tank(80, -40)
-        elif distance_diff > 5:  # Robot is too far from the obstacle
-            print(f"BB   {distance_diff}")
-            m.run_tank(80, -20)
-        elif distance_diff > -5:  # Robot is at the desired distance
-            print(f"CCC  {distance_diff}")
-            m.run_tank(80, 40)
-        elif distance_diff < -5:  # Robot is too close to the obstacle
-            print(f"DDDD {distance_diff}")
-            m.run_tank(80, 60)
+        if distance_diff > 35: # Robot has lost track of the obstacle
+            print(f"A    {distance_diff}    LOST TRACK")
+            lost_track_counter += 1
+
+            if lost_track_counter > 20:
+                m.run_tank(40, -40)
+            else:
+                m.run_tank(-40, 40)
+        else:
+            if lost_track_counter > 20:
+                m.run_tank_for_time(40, -40, 100)
+            
+            lost_track_counter = 0
+
+            if distance_diff > 5:  # Robot is too far from the obstacle
+                print(f"BB   {distance_diff}")
+                m.run_tank(100, -30)
+            elif distance_diff > 2:
+                print(f"EEEEE {distance_diff}")
+                m.run_tank(100, 0)
+            elif distance_diff > -2:  # Robot is at the desired distance
+                print(f"CCC  {distance_diff}")
+                m.run_tank(100, 15)
+            elif distance_diff <= -2:  # Robot is too close to the obstacle
+                print(f"DDDD {distance_diff}")
+                m.run_tank(100, 40)
+            elif distance_diff <= -4:
+                print(f"FFFFFF {distance_diff}")
+                m.run_tank(100, 60)
 
 class Monitor:
     """
