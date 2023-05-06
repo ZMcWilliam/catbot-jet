@@ -440,8 +440,14 @@ while True:
     try: 
         update_itr_stat("master", 1000)
 
-        l_green = check_col_green(PORT_COL_L)
-        r_green = check_col_green(PORT_COL_R)
+        # If both sensors detect red, we have reached the end of the line, stop, and make really sure we have reached the end
+        if latest_data["col_l"]["eval"] == "red" and latest_data["col_r"]["eval"] == "red":
+            print("End of line reached")
+            m.stop_all()
+            time.sleep(1)
+            if latest_data["col_l"]["eval"] == "red" and latest_data["col_r"]["eval"] == "red":
+                print("End of line confirmed")
+                break
 
         if latest_data["distance_front"] < obstacle_threshold and latest_data["distance_front"] > 0:
             print(f"Obstacle detected at {latest_data['distance_front']} cm")
