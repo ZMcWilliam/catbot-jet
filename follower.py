@@ -439,22 +439,28 @@ uss_side_monitor = Monitor(lambda: measure_distance("side"), "distance_side", ti
 
 print("Starting Bot")
 while True:
-    update_itr_stat("master", 1000)
+    try: 
+        update_itr_stat("master", 1000)
 
-    l_green = check_col_green(PORT_COL_L)
-    r_green = check_col_green(PORT_COL_R)
+        l_green = check_col_green(PORT_COL_L)
+        r_green = check_col_green(PORT_COL_R)
 
-    if latest_data["distance_front"] < obstacle_threshold and latest_data["distance_front"] > 0:
-        print(f"Obstacle detected at {latest_data['distance_front']} cm")
-        avoid_obstacle()
-    else:
-        follow_line()
+        if latest_data["distance_front"] < obstacle_threshold and latest_data["distance_front"] > 0:
+            print(f"Obstacle detected at {latest_data['distance_front']} cm")
+            avoid_obstacle()
+        else:
+            follow_line()
 
-    print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
-        + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
-        + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
-        + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
-        + f"\t Pos: {int(debug_info['pos'])},"
-        + f"\t Steering: {int(debug_info['steering'])},"
-        + f"\t Speeds: {debug_info['speeds']},"
-        + f"\t Line: {latest_data['line']['scaled']}")
+        print(f"ITR: {get_itr_stat('master')}, {get_itr_stat('line')}, {get_itr_stat('cols')}, {get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+            + f"\t GL: {l_green} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
+            + f"\t GR: {r_green} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
+            + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
+            + f"\t Pos: {int(debug_info['pos'])},"
+            + f"\t Steering: {int(debug_info['steering'])},"
+            + f"\t Speeds: {debug_info['speeds']},"
+            + f"\t Line: {latest_data['line']['scaled']}")
+    except KeyboardInterrupt:
+        print("Stopping Bot")
+        break
+
+m.stop_all()
