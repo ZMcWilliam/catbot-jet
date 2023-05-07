@@ -9,7 +9,8 @@ from colorama import init
 
 init()
 
-RUN_PIN = 24
+RUN_PIN = 19
+ENABLE_GIT = False
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(RUN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -32,13 +33,16 @@ def pushToGit():
         if len(diff_list) > 0:
             for diff in diff_list:
                 print(f"\033[1;33m[RUNNER]\033[1;m \033[1;37m   {diff.change_type} -> {diff.new_file}")
-            repo.index.commit("CatBot Auto Save")
-            repo.git.push("origin", "dev")
-            print("\033[1;33m[RUNNER]\033[1;m \033[1;37mSaved to git successfully")
+            if ENABLE_GIT:
+                repo.index.commit("CatBot Auto Save")
+                repo.git.push("origin", "dev")
+                print("\033[1;33m[RUNNER]\033[1;m \033[1;37mSaved to git successfully")
+            else:
+                print("\033[1;33m[RUNNER]\033[1;m \033[1;31mGit is disabled, not saving\033[1;37m")
         else:
             print("\033[1;33m[RUNNER]\033[1;m \033[1;37mNo changes to save to git")
     except Exception as e:
-        print("\033[1;33m[RUNNER]\033[1;m \033[1;31mFailed to save to git")
+        print("\033[1;33m[RUNNER]\033[1;m \033[1;31mFailed to save to git\033[1;37m")
         print(e)
 
 if not GPIO.input(RUN_PIN):
@@ -48,7 +52,7 @@ state = 0
 
 while True:
     try:
-        input_state = GPIO.input(RUN_PIN)
+        input_state = not GPIO.input(RUN_PIN)
         if p is not None:
             process_state = p.poll()
             if input_state == True and process_state is not None:
