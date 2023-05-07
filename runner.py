@@ -4,6 +4,7 @@ import os
 import sys
 import signal
 import subprocess
+import motorkit_helper as m
 from git import Repo
 from colorama import init
 
@@ -45,7 +46,7 @@ def pushToGit():
         print("\033[1;33m[RUNNER]\033[1;m \033[1;31mFailed to save to git\033[1;37m")
         print(e)
 
-if not GPIO.input(RUN_PIN):
+if GPIO.input(RUN_PIN):
     print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFollower is disabled, waiting to start...")
 p = None
 state = 0
@@ -73,6 +74,7 @@ while True:
                 time.sleep(0.4)
                 state = 0
                 stopCheck = 10
+                m.stop_all() # Stop all motors
                 print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFollower stopped")
             else:
                 time.sleep(0.01)
@@ -92,6 +94,8 @@ while True:
                     os.killpg(p.pid, signal.SIGTERM)
             except:
                 print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFailed to stop follower, is it running?")
+            m.stop_all() # Stop all motors
+            print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFollower stopped")
             sys.exit()
         else:
             print("\033[1;33m[RUNNER]\033[1;m \033[1;37mAborted quit")
