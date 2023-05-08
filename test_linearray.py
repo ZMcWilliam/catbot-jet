@@ -1,30 +1,52 @@
-from ADCPi import ADCPi
+import board
+import time
+import busio
+import adafruit_ads1x15.ads1015 as ADS
+from adafruit_ads1x15.analog_in import AnalogIn
 
-adc = ADCPi(0x68, 0x69, 12)
+i2c = busio.I2C(board.SCL, board.SDA)
 
-# cal_min = None
-# cal_max = None
+ads_1 = ADS.ADS1015(i2c, address=0x48)
+ads_1.gain = 1
+ads_1.mode = ADS.Mode.SINGLE
 
-# while True:
-#     vals = [adc.read_raw(i) for i in range(1, 9)]
+ads_2 = ADS.ADS1015(i2c, address=0x49)
+ads_1.gain = 1
+ads_2.mode = ADS.Mode.SINGLE
 
-#     if cal_min is None:
-#         cal_min = vals[:]
-#         cal_max = vals[:]
+ads_3 = ADS.ADS1015(i2c, address=0x4B)
+ads_1.gain = 1
+ads_3.mode = ADS.Mode.SINGLE
 
-#     for i in range(8):
-#         if vals[i] < cal_min[i]:
-#             cal_min[i] = vals[i]
-#         if vals[i] > cal_max[i]:
-#             cal_max[i] = vals[i]
-        
-#     print(vals, cal_min, cal_max)
+chan_1_0 = AnalogIn(ads_1, ADS.P0)
+chan_1_1 = AnalogIn(ads_1, ADS.P1)
+chan_1_2 = AnalogIn(ads_1, ADS.P2)
+chan_1_3 = AnalogIn(ads_1, ADS.P3)
 
+chan_2_0 = AnalogIn(ads_2, ADS.P0)
+chan_2_1 = AnalogIn(ads_2, ADS.P1)
+chan_2_2 = AnalogIn(ads_2, ADS.P2)
+chan_2_3 = AnalogIn(ads_2, ADS.P3)
 
-las_min = [67, 68, 66, 68, 68, 70, 66, 69]
-las_max = [127, 143, 124, 145, 135, 150, 114, 172]
+chan_3_0 = AnalogIn(ads_3, ADS.P0)
+chan_3_1 = AnalogIn(ads_3, ADS.P1)
+chan_3_2 = AnalogIn(ads_3, ADS.P2)
+chan_3_3 = AnalogIn(ads_3, ADS.P3)
 
+frames = 0
+start = time.time()
 while True:
-    vals = [adc.read_raw(i) for i in range(1, 9)]
-    vals = [int((vals[i] - las_min[i]) / (las_max[i] - las_min[i]) * 100) for i in range(8)]
-    print(vals)
+    frames += 1
+    print(f"{int(chan_1_0.value)} "
+        + f"{int(chan_1_1.value)} "
+        + f"{int(chan_1_2.value)} "
+        + f"{int(chan_1_3.value)} "
+        + f"{int(chan_2_0.value)} "
+        + f"{int(chan_2_1.value)} "
+        + f"{int(chan_2_2.value)} "
+        + f"{int(chan_2_3.value)} "
+        + f"{int(chan_3_0.value)} "
+        + f"{int(chan_3_1.value)} "
+        + f"{int(chan_3_2.value)} "
+        + f"{int(chan_3_3.value)} "
+        + f"\tFPS: {int(frames / (time.time() - start))}")

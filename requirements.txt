@@ -2,7 +2,7 @@ GitPython
 colorama
 adafruit-circuitpython-motorkit
 adafruit-circuitpython-tca9548a
+adafruit-circuitpython-ads1x15
 smbus2
 piicodev
 gpiozero
-git+https://github.com/abelectronicsuk/ABElectronics_Python_Libraries.git#egg=abelectronics
