@@ -28,6 +28,8 @@ PORT_USS_ECHO = {
     "front": 24,
     "side": 22,
 }
+PORT_COL_L = 6
+PORT_COL_R = 7
 # Line array ports, in order from left to right. letter is ADS selection, number is port on ADS
 PORT_ADS_LINE = ["A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3", "C0", "C1", "C2", "C3"]
 
