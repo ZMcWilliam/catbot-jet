@@ -142,26 +142,17 @@ for ads_port in PORT_ADS_LINE:
 
 tca = adafruit_tca9548a.TCA9548A(i2c)
 
-mx_locks = [False] * 8
-def mx_remove_locks() -> None:
-    """
-    Releases the locks on the I2C multiplexer channels.
-    """
-    for i in range(8):
-        if mx_locks[i] == True:
-            tca[i].unlock()
-            mx_locks[i] = False
-
 def mx_select(port: int) -> None:
     """
-    Selects the specified port on the I2C multiplexer and locks it.
+    Selects the specified port on the I2C multiplexer
 
     Args:
         port (int): The port number to select. Must be between 0 and 7.
     """
-    mx_remove_locks()
-    tca[port].try_lock()
-    mx_locks[port] = True
+    if port < 0 or port > 7:
+        raise ValueError("Port must be between 0 and 7")
+    
+    i2c.writeto(0x70, bytes([1 << port]))
 
 mx_select(PORT_COL_L)
 col_l = PiicoDev_VEML6040()
@@ -192,8 +183,7 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
     for col_name, col_threshold in col_thresholds.items():
         if data["hue"] == col_name and data["hsv"]["sat"] >= col_threshold:
             data["eval"] = col_name
-        
-    mx_remove_locks()
+
     latest_data["col_l" if port == PORT_COL_L else "col_r"] = data
     return data
 
