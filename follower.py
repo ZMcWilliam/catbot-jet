@@ -6,16 +6,18 @@ import time
 import gpiozero
 import asyncio
 import board
+import busio
 import adafruit_tca9548a
+import adafruit_ads1x15.ads1015 as ADS
 import motorkit_helper as m
 import threading
 from PiicoDev_VEML6040 import PiicoDev_VEML6040
-from ADCPi import ADCPi
 from typing import Union, List, Tuple, Dict
+from adafruit_ads1x15.analog_in import AnalogIn as ADSAnalogIn
 
 # Calibrated values for the reflectivity array
-las_min = [68, 65, 68, 66, 66, 64, 67, 66]
-las_max = [141, 113, 160, 142, 157, 124, 149, 108]
+las_min = [1312, 1248, 1280, 1280, 1248, 1280, 1264, 1312, 1296, 1248, 1264, 1344] 
+las_max = [10352, 9600, 10736, 10944, 8544, 11264, 10480, 11952, 10848, 8080, 9584, 12800]
 
 # Ports for sensors
 PORT_USS_TRIG = {
@@ -26,9 +28,8 @@ PORT_USS_ECHO = {
     "front": 24,
     "side": 22,
 }
-PORT_COL_L = 5
-PORT_COL_R = 4
-PORT_LINE = [8, 7, 6, 5, 4, 3, 2, 1] # ADC Ports, left to right when robot is facing forward
+# Line array ports, in order from left to right. letter is ADS selection, number is port on ADS
+PORT_ADS_LINE = ["A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3", "C0", "C1", "C2", "C3"]
 
 # Constants for PID control
 KP = 0.05  # Proportional gain
@@ -118,8 +119,25 @@ def get_itr_stat(stat: str, decimals: int = 0) -> float:
     val = itr_stats[stat]["count"] / (time.time() - itr_stats[stat]["time"])
     return round(val, decimals) if decimals > 0 else int(val)
 
-adc = ADCPi(0x68, 0x69, 12)
-i2c = board.I2C()
+i2c = busio.I2C(board.SCL, board.SDA)
+
+ads_addresses = [0x49, 0x48, 0x4B]
+ads_gain = 1
+ads_mode = ADS.Mode.SINGLE
+
+ads = []
+for address in ads_addresses:
+    ads_instance = ADS.ADS1015(i2c, address=address)
+    ads_instance.gain = ads_gain
+    ads_instance.mode = ads_mode
+    ads.append(ads_instance)
+
+ads_channels = []
+for ads_port in PORT_ADS_LINE:
+    ads_instance = ads[ord(ads_port[0]) - ord("A")]
+    channel = ADSAnalogIn(ads_instance, getattr(ADS, f"P{ads_port[1]}"))
+    ads_channels.append(channel)
+
 tca = adafruit_tca9548a.TCA9548A(i2c)
 
 mx_locks = [False] * 8
@@ -217,17 +235,17 @@ async def measure_distance(device: str = "front", max_distance: float = 100) -> 
 
 def read_line() -> List[List[float]]:
     """
-    Reads reflectivity data from the ADCPi channels and scales it.
+    Reads reflectivity data from the line array (ADS1015 channels) and scales it.
 
     Returns:
         List[List[float]]: A list containing two sublists:
-            - The raw reflectivity data from the ADCPi channels.
+            - The raw reflectivity data from ADS1015 channels.
             - The scaled reflectivity data between 0 and 100.
     """
-    data = [adc.read_raw(i) for i in PORT_LINE]
-    data_scaled = [0] * 8
+    data = [asd_channel.value for asd_channel in ads_channels]
+    data_scaled = [0] * len(data)
 
-    for i in range(8):
+    for i in range(len(data)):
         data_scaled[i] = (data[i] - las_min[i]) / (las_max[i] - las_min[i])
         data_scaled[i] = round(max(0, min(100, data_scaled[i] * 100)), 1)
 
