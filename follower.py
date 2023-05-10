@@ -11,6 +11,7 @@ import adafruit_tca9548a
 import adafruit_ads1x15.ads1015 as ADS
 import motorkit_helper as m
 import threading
+import multiprocessing
 from PiicoDev_VEML6040 import PiicoDev_VEML6040
 from typing import Union, List, Tuple, Dict
 from adafruit_ads1x15.analog_in import AnalogIn as ADSAnalogIn
@@ -50,7 +51,7 @@ col_thresholds = {
     "red": 0.65,
 }
 
-start_time = time.time()
+start_time = time.monotonic()
 
 latest_data = {
     "line": {
@@ -99,10 +100,10 @@ def update_itr_stat(stat: str, auto_reset: int = False) -> None:
         auto_reset (int, optional): The number of iterations before the stat is reset. Defaults to False.
     """
     if itr_stats[stat]["time"] == 0:
-        itr_stats[stat]["time"] = time.time()
+        itr_stats[stat]["time"] = time.monotonic()
     
     if auto_reset != False and itr_stats[stat]["count"] % auto_reset == 0:
-        itr_stats[stat]["time"] = time.time()
+        itr_stats[stat]["time"] = time.monotonic()
         itr_stats[stat]["count"] = 0
     
     itr_stats[stat]["count"] += 1
@@ -118,7 +119,7 @@ def get_itr_stat(stat: str, decimals: int = 0) -> float:
     Returns:
         float: The stat, in iterations per second.
     """
-    val = itr_stats[stat]["count"] / (time.time() - itr_stats[stat]["time"])
+    val = itr_stats[stat]["count"] / (time.monotonic() - itr_stats[stat]["time"])
     return round(val, decimals) if decimals > 0 else int(val)
 
 i2c = busio.I2C(board.SCL, board.SDA)
@@ -241,11 +242,8 @@ def read_line() -> List[List[float]]:
         data_scaled[i] = (data[i] - las_min[i]) / (las_max[i] - las_min[i])
         data_scaled[i] = round(max(0, min(100, data_scaled[i] * 100)), 1)
 
-    latest_data["line"]["raw"] = data
-    latest_data["line"]["scaled"] = data_scaled
     return [data, data_scaled]
 
-last_pos_value = 0
 def calculate_position(values: List[float], invert: int = False) -> float:
     """
     Calculates the position on a line based on given reflectivity sensor values.
@@ -260,10 +258,10 @@ def calculate_position(values: List[float], invert: int = False) -> float:
     Note:
         The position is calculated by taking the weighted average of the reflectivity values.
         
-        A global variable, last_pos_value, is used to store the last calculated position in order to provide
+        A global variable, debug_info["pos"], is used to store the last calculated position in order to provide
         a more accurate position when the robot is not on the line.
     """
-    global last_pos_value
+    last_pos_value = debug_info["pos"]
     on_line = False
     avg = 0
     sum_values = 0
@@ -382,7 +380,7 @@ def avoid_obstacle() -> None:
 
 class Monitor:
     """
-    A class that monitors a function in a separate thread.
+    A class that monitors a function in a separate process.
 
     Args:
         loop_function (function): The function to monitor.
@@ -397,35 +395,50 @@ class Monitor:
         self.is_async = is_async
 
         self.paused = False
-        self.pause_event = threading.Event()
+        self.pause_event = multiprocessing.Event()
 
-        self.thread = threading.Thread(target=self.run_loop)
-        self.thread.daemon = True
-        self.thread.start()
+        self.queue = multiprocessing.Queue()
+
+        self.process = multiprocessing.Process(target=self.run_loop)
+        self.process.daemon = True
+        self.process.start()
+
+        self.latest_result = None
 
     def run_loop(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        loop.run_until_complete(self._monitor_loop())
-
-    async def _monitor_loop(self):
+        tick = 0
+        start = time.monotonic()
         while True:
+            tick += 1
             if not self.paused:
-                update_itr_stat(self.itr_stat)
+                # update_itr_stat(self.itr_stat)
 
-                # Await function if it's async, otherwise just call it
-                # Bear in mind, we may be using a lambda function which includes an async function
-                if asyncio.iscoroutinefunction(self.loop_function) or self.is_async:
-                    await self.loop_function()
-                else:
-                    self.loop_function()
+                # Call the function and put the result in the queue
+                result = self.loop_function()
+                self.queue.put([result, [start, tick]])
 
                 if self.timeout > 0:
-                    await asyncio.sleep(self.timeout)
+                    time.sleep(self.timeout)
             else:
                 self.pause_event.wait()
 
+    def get_data(self):
+        if not self.queue.empty():
+            self.latest_result = self.queue.get()
+        if self.latest_result is None:
+            return None
+        
+        itr_stats[self.itr_stat]["time"] = self.latest_result[1][0]
+        itr_stats[self.itr_stat]["count"] = self.latest_result[1][1]
+        return self.latest_result[0]
+
+    def wait_for_data(self):
+        while self.latest_result is None:
+            if self.get_data() is not None:
+                break
+            time.sleep(0.05)
+        return self.latest_result
+    
     def pause(self):
         itr_stats[self.itr_stat]["paused"] = True
         self.paused = True
@@ -438,12 +451,33 @@ class Monitor:
         update_itr_stat(self.itr_stat, 1) # Reset the iteration counter as the loop was paused
 
     def stop(self):
-        self.thread.stop()
+        self.process.terminate()
 
-line_monitor = Monitor(read_line, "line")
-cols_monitor = Monitor(lambda: (read_col(PORT_COL_L), read_col(PORT_COL_R)), "cols")
-uss_front_monitor = Monitor(lambda: measure_distance("front"), "distance_front", timeout=0.02, is_async=True)
-uss_side_monitor = Monitor(lambda: measure_distance("side"), "distance_side", timeout=0.02, is_async=True)
+async def run_monitors():
+    """
+    Runs several sensor monitors, and updates the latest data.
+    """
+    line_monitor = Monitor(read_line, "line")
+    line_monitor.wait_for_data()
+    print("LINE_MONITOR: First data point received")
+
+    cols_monitor = Monitor(lambda: (read_col(PORT_COL_L), read_col(PORT_COL_R)), "cols", timeout=0.02)
+    cols_monitor.wait_for_data()
+    print("COLS_MONITOR: First data point received")
+
+    uss_front_monitor = Monitor(lambda: measure_distance("front"), "distance_front", timeout=0.06)
+    uss_front_monitor.wait_for_data()
+    print("USS_FRONT_MONITOR: First data point received")
+
+    while True:
+        latest_data["line"]["raw"], latest_data["line"]["scaled"] = line_monitor.get_data()
+        latest_data["col_l"], latest_data["col_r"] = cols_monitor.get_data()
+        latest_data["distance_front"] = uss_front_monitor.get_data()
+        await asyncio.sleep(0.01)
+
+monitor_thread = threading.Thread(target=lambda: asyncio.run(run_monitors()))
+monitor_thread.daemon = True
+monitor_thread.start()
 
 print("Starting Bot")
 while True:
@@ -465,14 +499,17 @@ while True:
         else:
             follow_line()
 
-        print(f"ITR: M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}, U{get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
-            + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
-            + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
-            + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
-            + f"\t Pos: {int(debug_info['pos'])},"
-            + f"\t Steering: {int(debug_info['steering'])},"
-            + f"\t Speeds: {debug_info['speeds']},"
-            + f"\t Line: {latest_data['line']['scaled']}")
+        if itr_stats["master"]["count"] % 1 == 0:
+            print(f"ITR: {itr_stats['master']['count']:4d} M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}, U{get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+                + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
+                + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
+                + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
+                + f"\t Pos: {int(debug_info['pos'])},"
+                + f"\t Steering: {int(debug_info['steering'])},"
+                + f"\t Speeds: {debug_info['speeds']},"
+                + f"\t Line: {latest_data['line']['scaled']}")
+
+        time.sleep(0.015)
     except KeyboardInterrupt:
         print("Stopping Bot")
         break
