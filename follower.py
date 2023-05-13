@@ -192,7 +192,7 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
 USS_TRIG = { device: gpiozero.OutputDevice(device_pin, active_high=True, initial_value=False) for device, device_pin in PORT_USS_TRIG.items() }
 USS_ECHO = { device: gpiozero.InputDevice(device_pin) for device, device_pin in PORT_USS_ECHO.items() }
 
-async def measure_distance(device: str = "front", max_distance: float = 100) -> float:
+def measure_distance(device: str = "front", max_distance: float = 200) -> float:
     """
     Measures the distance using the RCWL-1601 ultrasonic sensor.
 
@@ -204,7 +204,7 @@ async def measure_distance(device: str = "front", max_distance: float = 100) -> 
         float: The measured distance in centimeters.
     """
     USS_TRIG[device].on()
-    await asyncio.sleep(0.00001)
+    time.sleep(0.00001)
     USS_TRIG[device].off()
 
     pulse_start = time.monotonic()
