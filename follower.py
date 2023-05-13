@@ -35,10 +35,10 @@ PORT_COL_R = 7
 PORT_ADS_LINE = ["A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3", "C0", "C1", "C2", "C3"]
 
 # Constants for PID control
-KP = 0.05  # Proportional gain
+KP = 0.06 # Proportional gain
 KI = 0  # Integral gain
-KD = 0.2  # Derivative gain
-follower_speed = 40
+KD = 0.0  # Derivative gain
+follower_speed = 30
 
 # Variables for PID control
 pid_error_sum = 0
@@ -82,6 +82,7 @@ latest_data = {
 
 debug_info = {
     "steering": 0,
+    "on_line": False,
     "pos": 0,
     "speeds": [0, 0],
 }
@@ -240,16 +241,17 @@ def read_line() -> List[List[float]]:
 
     for i in range(len(data)):
         data_scaled[i] = (data[i] - las_min[i]) / (las_max[i] - las_min[i])
-        data_scaled[i] = round(max(0, min(100, data_scaled[i] * 100)), 1)
+        data_scaled[i] = int(max(0, min(100, data_scaled[i] * 100)) * 10)
 
     return [data, data_scaled]
 
-def calculate_position(values: List[float], invert: int = False) -> float:
+def calculate_position(values: List[float], last_pos: int, invert: int = False) -> float:
     """
     Calculates the position on a line based on given reflectivity sensor values.
 
     Args:
         values (List[float]): List of reflectivity sensor values.
+        last_pos (int): The last calculated position on the line.
         invert (bool, optional): Flag indicating whether to invert the reflectivity values. Defaults to False.
 
     Returns:
@@ -258,10 +260,13 @@ def calculate_position(values: List[float], invert: int = False) -> float:
     Note:
         The position is calculated by taking the weighted average of the reflectivity values.
         
-        A global variable, debug_info["pos"], is used to store the last calculated position in order to provide
+        last_pos is used to check the last calculated position in order to provide
         a more accurate position when the robot is not on the line.
+
+        A global variable debug_info["on_line"] is set to True if the robot is on the line.
     """
-    last_pos_value = debug_info["pos"]
+    conf_off_line_gap = 0.4 # Percent
+
     on_line = False
     avg = 0
     sum_values = 0
@@ -271,22 +276,27 @@ def calculate_position(values: List[float], invert: int = False) -> float:
         if invert:
             value = 100 - value
         
-        if value > 10:
+        if value > 100: # Any sensor must have a value of at least 5 to be considered on the line
             on_line = True
 
-        if value > 8:
+        if value > 20:
             avg += value * (i * 1000)
             sum_values += value
 
-    if not on_line:
-        if last_pos_value < ((len(values) - 1) * 1000) / 2:
-            return 0
-        else:
-            return (len(values) - 1) * 1000
+    if not on_line or sum_values == 0:
+        debug_info["on_line"] = False
+        max_val = (len(values) - 1) * 1000
 
-    last_pos_value = avg / sum_values
-    debug_info["pos"] = last_pos_value
-    return last_pos_value
+        if last_pos <= conf_off_line_gap * (len(values) - 1) * 1000:
+            debug_info["pos"] = 0
+            return 0
+        elif last_pos >= max_val - conf_off_line_gap * (len(values) - 1) * 1000:
+            return max_val
+        else:
+            return max_val / 2
+
+    debug_info["on_line"] = True
+    return avg / sum_values
 
 def follow_line() -> None:
     """
@@ -294,8 +304,9 @@ def follow_line() -> None:
     """
     global pid_error_sum, pid_last_error
 
-    pos = calculate_position(latest_data["line"]["scaled"])
-    error = pos - 3500
+    pos = calculate_position(latest_data["line"]["scaled"], debug_info["pos"])
+    debug_info["pos"] = pos
+    error = pos - (len(latest_data["line"]["scaled"]) - 1) * 1000 / 2
 
     # Update the error sum and limit it within a reasonable range
     pid_error_sum += error
@@ -504,10 +515,10 @@ while True:
                 + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
                 + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
                 + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
-                + f"\t Pos: {int(debug_info['pos'])},"
-                + f"\t Steering: {int(debug_info['steering'])},"
+                + f"\t Pos: {int(debug_info['pos']):6d},"
+                + f"\t Steering: {int(debug_info['steering']):4d},"
                 + f"\t Speeds: {debug_info['speeds']},"
-                + f"\t Line: {latest_data['line']['scaled']}")
+                + f"\t Line: {debug_info['on_line']} {latest_data['line']['scaled']}")
 
         time.sleep(0.015)
     except KeyboardInterrupt:
