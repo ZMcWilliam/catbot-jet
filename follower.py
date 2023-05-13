@@ -493,7 +493,7 @@ monitor_thread.start()
 print("Starting Bot")
 while True:
     try: 
-        update_itr_stat("master", 1000)
+        update_itr_stat("master", 10000)
 
         # If both sensors detect red, we have reached the end of the line, stop, and make really sure we have reached the end
         if latest_data["col_l"]["eval"] == "red" and latest_data["col_r"]["eval"] == "red":
@@ -520,7 +520,7 @@ while True:
                 + f"\t Speeds: {debug_info['speeds']},"
                 + f"\t Line: {debug_info['on_line']} {latest_data['line']['scaled']}")
 
-        time.sleep(0.015)
+        time.sleep(0.01)
     except KeyboardInterrupt:
         print("Stopping Bot")
         break
