@@ -20,7 +20,8 @@ from adafruit_ads1x15.analog_in import AnalogIn as ADSAnalogIn
 las_min = [1312, 1248, 1280, 1280, 1248, 1280, 1264, 1312, 1296, 1248, 1264, 1344] 
 las_max = [10352, 9600, 10736, 10944, 8544, 11264, 10480, 11952, 10848, 8080, 9584, 12800]
 
-# Ports for sensors
+# Ports for IO
+PORT_DEBUG_SWITCH = 19
 PORT_USS_TRIG = {
     "front": 23,
     "side": 27,
@@ -89,6 +90,8 @@ debug_info = {
     "pos": ((len(PORT_ADS_LINE) - 1) * 1000) / 2,
     "speeds": [0, 0],
 }
+
+debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
 
 USS = {
     key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
@@ -521,7 +524,7 @@ while True:
         else:
             follow_line()
 
-        if itr_stats["master"]["count"] % 1 == 0:
+        if itr_stats["master"]["count"] % 1 == 0 and debug_switch.value:
             print(f"ITR: {itr_stats['master']['count']:4d} M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}"
                 + f"\t Line: {['LOST', ' ON ', 'ALL '][debug_info['line_state']]} "
                     + (" INVERT " if debug_info['is_inverted'] else "        ")
