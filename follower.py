@@ -44,7 +44,7 @@ follower_speed = 30
 pid_error_sum = 0
 pid_last_error = 0
 
-obstacle_threshold = 4  # Distance threshold to detect an obstacle
+obstacle_threshold = 5  # Distance threshold to detect an obstacle
 
 col_thresholds = {
     "green": 0.55,
@@ -84,6 +84,8 @@ debug_info = {
     "steering": 0,
     "line_state": 0, # 0 = Lost line, 1 = Found line, 2 = Full line
     "is_inverted": False,
+    "line_contour_full": "",
+    "line_contour_switches": "",
     "pos": ((len(PORT_ADS_LINE) - 1) * 1000) / 2,
     "speeds": [0, 0],
 }
@@ -213,7 +215,7 @@ def read_line() -> List[List[float]]:
 
     return [data, data_scaled]
 
-def calculate_position(values: List[float], last_pos: int, invert: int = False) -> float:
+def calculate_position(values: List[float], last_pos: int, invert: bool = False, prevent_invert: bool = False) -> float:
     """
     Calculates the position on a line based on given reflectivity sensor values.
 
@@ -221,6 +223,7 @@ def calculate_position(values: List[float], last_pos: int, invert: int = False) 
         values (List[float]): List of reflectivity sensor values.
         last_pos (int): The last calculated position on the line.
         invert (bool, optional): Flag indicating whether to invert the reflectivity values. Defaults to False.
+        prevent_invert (bool, optional): Flag indicating whether to prevent triggering an invert. Defaults to False.
 
     Returns:
         float: The calculated position on the line
@@ -256,6 +259,9 @@ def calculate_position(values: List[float], last_pos: int, invert: int = False) 
         elif contour_full[i] != contour_full[i - 1]:
             contour_switches += contour_full[i]
     
+    debug_info["line_contour_full"] = contour_full
+    debug_info["line_contour_switches"] = contour_switches
+
     if not debug_switch.value:
         print(f"{itr_stats['master']['count']:5d}", contour_full, invert, "  " + contour_switches + " "*(10 - len(contour_switches)), "".join([f"{x:5d}" for x in values]), "----", "".join([f"{x:5d}" for x in latest_data['line']['scaled']]))
 
@@ -263,7 +269,8 @@ def calculate_position(values: List[float], last_pos: int, invert: int = False) 
         debug_info["line_state"] = 2
         return max_val / 2
 
-    if (contour_switches == "101" 
+    if (not prevent_invert
+            and contour_switches == "101" 
             and contour_full.startswith("111") 
             and contour_full.endswith("111")
             and values[0] > 800
@@ -324,67 +331,69 @@ def avoid_obstacle() -> None:
     """
     Performs obstacle avoidance when an obstacle is detected.
     """
-    obstacle_maintain_distance = 9  # Desired distance to maintain from the obstacle
+    side_distance_threshold = 30 # Distance threshold for the side ultrasonic sensor to detect an obstacle
 
-    # Step 1: Stop the robot
-    m.stop_all()
-    time.sleep(0.3)
-    m.run_tank_for_time(-50, -50, 200)
-    time.sleep(0.2)
+    m.run_tank_for_time(-40, -40, 500)
+    m.run_tank_for_time(-100, 100, 1100) # 90 degree left turn
+    
+    def forward_until(distance: int, less_than: bool, check_for_line: bool = False, timeout: int = 10, debug_prefix: str = "") -> bool:
+        """
+        Obstacle avoidance helper:
+        Goes forward until the side ultrasonic sensor sees something less than the given distance.
+        Allows for checking for the existence of a line while going forward.
 
-    # Step 2: Rotate until the side ultrasonic sensor detects the obstacle
-    while True:
-        distance = latest_data["distance_side"]
-        print("Aligning obstacle on side: " + str(distance) + " cm")
-        if distance > obstacle_threshold + 8:
-            m.run_tank(-50, 50)  # Rotate left
-        else:
-            m.stop_all()
-            time.sleep(0.1)
-            m.run_tank_for_time(-50, 50, 300)
-            break
+        Args:
+            distance (int): The distance threshold for the side ultrasonic sensor to detect an obstacle.
+            less_than (bool): Flag indicating whether to check for a distance less than or greater than the given distance.
+            check_for_line (bool, optional): Flag indicating whether to check for a line while going forward. Defaults to False.
+            timeout (int, optional): The timeout in seconds. Defaults to 10.
+            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
+        """
+        m.run_tank(30, 30)
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            print(debug_prefix + "Side Distance: " + str(latest_data["distance_side"]))
+            if check_for_line:
+                line = latest_data["line"]["scaled"]
+                debug_info["pos"] = calculate_position(line, debug_info["pos"], invert=False, prevent_invert=True)
 
-    time.sleep(1)
-
-    lost_track_counter = 0
-
-    # Step 3: Move around the obstacle while maintaining a constant distance
-    while True:
-        # Calculate the difference between the current distance and the desired distance
-        distance_diff = round(latest_data["distance_side"] - obstacle_maintain_distance, 2)
-
-        # print("Distance diff: " + str(distance_diff) + " cm")
-
-        # Adjust the robot's position and orientation to maintain the desired distance
-        if distance_diff > 35: # Robot has lost track of the obstacle
-            print(f"A    {distance_diff}    LOST TRACK")
-            lost_track_counter += 1
-
-            if lost_track_counter > 20:
-                m.run_tank(40, -40)
-            else:
-                m.run_tank(-40, 40)
-        else:
-            if lost_track_counter > 20:
-                m.run_tank_for_time(40, -40, 100)
+                if debug_info["line_contour_switches"] in ["010"]:
+                    print(debug_prefix + "Found line")
+                    return True
+                
+                return True
             
-            lost_track_counter = 0
+            if latest_data["distance_side"] < distance and less_than:
+                return False
+            elif latest_data["distance_side"] >= distance and not less_than:
+                return False
+        
+        return False
 
-            if distance_diff > 5:  # Robot is too far from the obstacle
-                print(f"BB   {distance_diff}")
-                m.run_tank(100, -30)
-            elif distance_diff > 2:
-                print(f"EEEEE {distance_diff}")
-                m.run_tank(100, 0)
-            elif distance_diff > -2:  # Robot is at the desired distance
-                print(f"CCC  {distance_diff}")
-                m.run_tank(100, 15)
-            elif distance_diff <= -2:  # Robot is too close to the obstacle
-                print(f"DDDD {distance_diff}")
-                m.run_tank(100, 40)
-            elif distance_diff <= -4:
-                print(f"FFFFFF {distance_diff}")
-                m.run_tank(100, 60)
+    turn_count = 0
+    while turn_count < 4:
+        m.run_tank(30, 30)
+        # Go forward until side ultrasonic sees something less than 30cm 
+        # After the second turn, check for a line while going forward
+        if forward_until(side_distance_threshold, less_than=True, check_for_line=turn_count >= 2, debug_prefix="STEP A, TURN " + str(turn_count) + " - "):
+            break # Found a line
+        print("Found obstacle, side distance: " + str(latest_data["distance_side"]))
+        
+        # Keep going forward until side ultrasonic no longer sees object
+        if forward_until(side_distance_threshold, less_than=False, check_for_line=turn_count >= 2, debug_prefix="STEP B, TURN " + str(turn_count) + " - "):
+            break # Found a line
+        print("Lost obstacle, side distance: " + str(latest_data["distance_side"]))
+
+        # Did not find a line, so keep going forward a bit, turn right, and try again
+        m.run_tank_for_time(25, 25, 900)
+        m.run_tank_for_time(100, -100, 950) # 90 degree right turn
+        turn_count += 1
+        
+        time.sleep(0.5)
+
+    # We found the line, now reconnect and follow it
+    m.stop_all()
+    time.sleep(3)
 
 class Monitor:
     """
