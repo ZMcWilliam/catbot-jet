@@ -97,7 +97,7 @@ USS = {
 
 itr_stats = {
     name: {"count": 0, "time": 0, "paused": False}
-    for name in ["master", "line", "cols", "distance_front", "distance_side"]
+    for name in ["master", "line", "cols"]
 }
 
 def update_itr_stat(stat: str, auto_reset: int = False) -> None:
@@ -522,7 +522,7 @@ while True:
             follow_line()
 
         if itr_stats["master"]["count"] % 1 == 0:
-            print(f"ITR: {itr_stats['master']['count']:4d} M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}, U{get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+            print(f"ITR: {itr_stats['master']['count']:4d} M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}"
                 + f"\t Line: {['LOST', ' ON ', 'ALL '][debug_info['line_state']]} "
                     + (" INVERT " if debug_info['is_inverted'] else "        ")
                     + "".join([f"{x:5d}" for x in latest_data['line']['scaled']])
