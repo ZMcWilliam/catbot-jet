@@ -6,13 +6,13 @@ from typing import Union, List
 kit = MotorKit()
 
 # Direction config, such that a positive speed value will be "straight" for each motor
-conf_directions = [-1, 1, -1, 1]
+conf_directions = [1, -1, -1, 1]
 
 conf_tank = {
     "front_l": 1,
     "front_r": 0,
-    "back_l": 3,
-    "back_r": 2
+    "back_l": 2,
+    "back_r": 3
 }
  
 def motor(num: int) -> adafruit_motor.motor.DCMotor:
