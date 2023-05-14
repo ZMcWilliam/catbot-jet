@@ -494,10 +494,12 @@ class Monitor:
     def stop(self):
         self.process.terminate()
 
+monitor_ready = False
 async def run_monitors():
     """
     Runs several sensor monitors, and updates the latest data.
     """
+    global monitor_ready
     line_monitor = Monitor(read_line, "line")
     line_monitor.wait_for_data()
     print("LINE_MONITOR: First data point received")
@@ -510,6 +512,7 @@ async def run_monitors():
     uss_front_monitor.wait_for_data()
     print("USS_FRONT_MONITOR: First data point received")
 
+    monitor_ready = True
     while True:
         latest_data["line"]["raw"], latest_data["line"]["scaled"] = line_monitor.get_data()
         latest_data["col_l"], latest_data["col_r"] = cols_monitor.get_data()
@@ -520,7 +523,11 @@ monitor_thread = threading.Thread(target=lambda: asyncio.run(run_monitors()))
 monitor_thread.daemon = True
 monitor_thread.start()
 
-print("Starting Bot")
+print("Waiting for monitors to start")
+while not monitor_ready:
+    time.sleep(0.05)
+print("Monitors started, starting main loop")
+
 while True:
     try: 
         update_itr_stat("master", 10000)
