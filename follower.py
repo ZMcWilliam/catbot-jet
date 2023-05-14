@@ -88,6 +88,11 @@ debug_info = {
     "speeds": [0, 0],
 }
 
+USS = {
+    key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
+    for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
+}
+
 itr_stats = {
     name: {"count": 0, "time": 0, "paused": False}
     for name in ["master", "line", "cols", "distance_front", "distance_side"]
@@ -189,44 +194,6 @@ def read_col(port: int) -> Dict[str, Union[Tuple[float, float, float], str]]:
 
     latest_data["col_l" if port == PORT_COL_L else "col_r"] = data
     return data
-
-USS_TRIG = { device: gpiozero.OutputDevice(device_pin, active_high=True, initial_value=False) for device, device_pin in PORT_USS_TRIG.items() }
-USS_ECHO = { device: gpiozero.InputDevice(device_pin) for device, device_pin in PORT_USS_ECHO.items() }
-
-def measure_distance(device: str = "front", max_distance: float = 200) -> float:
-    """
-    Measures the distance using the RCWL-1601 ultrasonic sensor.
-
-    Args:
-        device (str, optional): The device to measure the distance from. Defaults to "front".
-        max_distance (float, optional): The maximum distance to measure in centimeters. Defaults to 200.
-
-    Returns:
-        float: The measured distance in centimeters.
-    """
-    USS_TRIG[device].on()
-    time.sleep(0.00001)
-    USS_TRIG[device].off()
-
-    pulse_start = time.monotonic()
-    while USS_ECHO[device].is_active == False:
-        if time.monotonic() - pulse_start > max_distance / 17150:
-            return max_distance
-        pulse_start = time.monotonic()
-
-    pulse_end = time.monotonic()
-    while USS_ECHO[device].is_active == True:
-        if time.monotonic() - pulse_end > max_distance / 17150:
-            return max_distance
-        pulse_end = time.monotonic()
-
-    pulse_duration = pulse_end - pulse_start
-    distance = pulse_duration * 17150
-    distance = min(distance, max_distance)
-    distance = round(distance, 2)
-
-    latest_data["distance_" + device] = distance
-    return distance
 
 def read_line() -> List[List[float]]:
     """
@@ -508,15 +475,13 @@ async def run_monitors():
     cols_monitor.wait_for_data()
     print("COLS_MONITOR: First data point received")
 
-    uss_front_monitor = Monitor(lambda: measure_distance("front"), "distance_front", timeout=0.06)
-    uss_front_monitor.wait_for_data()
-    print("USS_FRONT_MONITOR: First data point received")
-
     monitor_ready = True
     while True:
         latest_data["line"]["raw"], latest_data["line"]["scaled"] = line_monitor.get_data()
         latest_data["col_l"], latest_data["col_r"] = cols_monitor.get_data()
-        latest_data["distance_front"] = uss_front_monitor.get_data()
+
+        latest_data["distance_front"] = round(USS["front"].distance * 100, 2)
+        latest_data["distance_side"] = round(USS["side"].distance * 100, 2)
         await asyncio.sleep(0.01)
 
 monitor_thread = threading.Thread(target=lambda: asyncio.run(run_monitors()))
@@ -554,7 +519,7 @@ while True:
                     + "".join([f"{x:5d}" for x in latest_data['line']['scaled']])
                 + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
                 + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
-                + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
+                + f"\t USS: {latest_data['distance_front'], latest_data['distance_side']}"
                 + f"\t Pos: {int(debug_info['pos']):6d},"
                 + f"\t Steering: {int(debug_info['steering']):4d},"
                 + f"\t Speeds: {debug_info['speeds']},"
