@@ -82,8 +82,9 @@ latest_data = {
 
 debug_info = {
     "steering": 0,
-    "on_line": False,
-    "pos": 0,
+    "line_state": 0, # 0 = Lost line, 1 = Found line, 2 = Full line
+    "is_inverted": False,
+    "pos": ((len(PORT_ADS_LINE) - 1) * 1000) / 2,
     "speeds": [0, 0],
 }
 
@@ -263,39 +264,68 @@ def calculate_position(values: List[float], last_pos: int, invert: int = False) 
         last_pos is used to check the last calculated position in order to provide
         a more accurate position when the robot is not on the line.
 
-        A global variable debug_info["on_line"] is set to True if the robot is on the line.
+        A global variable debug_info["line_state"] is set based on the state of the line.
     """
     conf_off_line_gap = 0.4 # Percent
+    conf_on_line_threshold = 100 # Val - A value above this indicates that the robot is on the line
+    conf_threshold = 20 # Val - Values above this will be included in the weighted average
+    conf_black_threshold = 300 # Val - Values above this will be considered "black"
 
+    max_val = (len(values) - 1) * 1000
     on_line = False
     avg = 0
     sum_values = 0
 
+    if invert:
+        values = [1000 - value for value in values]
+
+    contour_full = ""
+    contour_switches = ""
     for i in range(len(values)):
-        value = values[i]
-        if invert:
-            value = 100 - value
-        
-        if value > 100: # Any sensor must have a value of at least 5 to be considered on the line
+        contour_full += "1" if values[i] > conf_black_threshold else "0"
+
+        if contour_switches == "":
+            contour_switches += contour_full[i]
+        elif contour_full[i] != contour_full[i - 1]:
+            contour_switches += contour_full[i]
+    
+    if not debug_switch.value:
+        print(f"{itr_stats['master']['count']:5d}", contour_full, invert, "  " + contour_switches + " "*(10 - len(contour_switches)), "".join([f"{x:5d}" for x in values]), "----", "".join([f"{x:5d}" for x in latest_data['line']['scaled']]))
+
+    if contour_switches == "1": # Line is fully black
+        debug_info["line_state"] = 2
+        return max_val / 2
+
+    if (contour_switches == "101" 
+            and contour_full.startswith("111") 
+            and contour_full.endswith("111")
+            and values[0] > 800
+            and values[-1] > 800
+        ): # Line is black-white-black, we need to invert the values
+        print("DETECTED INVERTED LINE, NOW: " + str(not invert))
+        debug_info["is_inverted"] = not invert
+
+        return calculate_position(values, last_pos, invert = True)
+    
+    for i, value in enumerate(values):
+        if value > conf_on_line_threshold:
             on_line = True
 
-        if value > 20:
+        if value > conf_threshold:
             avg += value * (i * 1000)
             sum_values += value
 
     if not on_line or sum_values == 0:
-        debug_info["on_line"] = False
-        max_val = (len(values) - 1) * 1000
+        debug_info["line_state"] = 0
 
         if last_pos <= conf_off_line_gap * (len(values) - 1) * 1000:
-            debug_info["pos"] = 0
             return 0
         elif last_pos >= max_val - conf_off_line_gap * (len(values) - 1) * 1000:
             return max_val
         else:
             return max_val / 2
 
-    debug_info["on_line"] = True
+    debug_info["line_state"] = 1
     return avg / sum_values
 
 def follow_line() -> None:
@@ -304,7 +334,7 @@ def follow_line() -> None:
     """
     global pid_error_sum, pid_last_error
 
-    pos = calculate_position(latest_data["line"]["scaled"], debug_info["pos"])
+    pos = calculate_position(latest_data["line"]["scaled"], debug_info["pos"], invert=debug_info["is_inverted"])
     debug_info["pos"] = pos
     error = pos - (len(latest_data["line"]["scaled"]) - 1) * 1000 / 2
 
@@ -512,13 +542,16 @@ while True:
 
         if itr_stats["master"]["count"] % 1 == 0:
             print(f"ITR: {itr_stats['master']['count']:4d} M{get_itr_stat('master')}, L{get_itr_stat('line')}, C{get_itr_stat('cols')}, U{get_itr_stat('distance_front'), get_itr_stat('distance_side')}"
+                + f"\t Line: {['LOST', ' ON ', 'ALL '][debug_info['line_state']]} "
+                    + (" INVERT " if debug_info['is_inverted'] else "        ")
+                    + "".join([f"{x:5d}" for x in latest_data['line']['scaled']])
                 + f"\t L: {latest_data['col_l']['eval']} ({latest_data['col_l']['hue']}, {round(latest_data['col_l']['hsv']['sat'], 2)})"
                 + f"\t R: {latest_data['col_r']['eval']} ({latest_data['col_r']['hue']}, {round(latest_data['col_r']['hsv']['sat'], 2)})"
                 + f"\t USS: {latest_data['distance_front']}, {latest_data['distance_side']}"
                 + f"\t Pos: {int(debug_info['pos']):6d},"
                 + f"\t Steering: {int(debug_info['steering']):4d},"
                 + f"\t Speeds: {debug_info['speeds']},"
-                + f"\t Line: {debug_info['on_line']} {latest_data['line']['scaled']}")
+            )
 
         time.sleep(0.01)
     except KeyboardInterrupt:
