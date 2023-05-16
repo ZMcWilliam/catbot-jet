@@ -36,10 +36,10 @@ PORT_COL_R = 7
 PORT_ADS_LINE = ["A0", "A1", "A2", "A3", "B0", "B1", "B2", "B3", "C0", "C1", "C2", "C3"]
 
 # Constants for PID control
-KP = 0.06 # Proportional gain
+KP = 0.07 # Proportional gain
 KI = 0  # Integral gain
-KD = 0.0  # Derivative gain
-follower_speed = 30
+KD = 0.1  # Derivative gain
+follower_speed = 40
 
 # Variables for PID control
 pid_error_sum = 0
