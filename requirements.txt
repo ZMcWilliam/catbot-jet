@@ -6,3 +6,6 @@ adafruit-circuitpython-ads1x15
 smbus2
 piicodev
 gpiozero
+opencv-python
+imutils
+picamera2
