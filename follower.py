@@ -6,6 +6,7 @@ import time
 import gpiozero
 import asyncio
 import board
+import math
 import busio
 import adafruit_tca9548a
 import adafruit_ads1x15.ads1015 as ADS
@@ -15,6 +16,7 @@ import multiprocessing
 from PiicoDev_VEML6040 import PiicoDev_VEML6040
 from typing import Union, List, Tuple, Dict
 from adafruit_ads1x15.analog_in import AnalogIn as ADSAnalogIn
+from cmps14_helper import CMPS14
 
 # Calibrated values for the reflectivity array
 las_min = [1312, 1248, 1280, 1280, 1248, 1280, 1264, 1312, 1296, 1248, 1264, 1344] 
@@ -56,8 +58,8 @@ start_time = time.monotonic()
 
 latest_data = {
     "line": {
-        "raw": [0] * 8,
-        "scaled": [0] * 8,
+        "raw": [0] * len(PORT_ADS_LINE),
+        "scaled": [0] * len(PORT_ADS_LINE),
     },
     "col_l": {
         "hsv": {
@@ -97,6 +99,8 @@ USS = {
     key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
     for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
 }
+
+cmps = CMPS14(1, 0x61)
 
 itr_stats = {
     name: {"count": 0, "time": 0, "paused": False}
@@ -335,9 +339,6 @@ def avoid_obstacle() -> None:
     Performs obstacle avoidance when an obstacle is detected.
     """
     side_distance_threshold = 30 # Distance threshold for the side ultrasonic sensor to detect an obstacle
-
-    m.run_tank_for_time(-40, -40, 500)
-    m.run_tank_for_time(-100, 100, 1100) # 90 degree left turn
     
     def forward_until(distance: int, less_than: bool, check_for_line: bool = False, timeout: int = 10, debug_prefix: str = "") -> bool:
         """
@@ -356,22 +357,64 @@ def avoid_obstacle() -> None:
         start_time = time.time()
         while time.time() - start_time < timeout:
             print(debug_prefix + "Side Distance: " + str(latest_data["distance_side"]))
+            
             if check_for_line:
                 line = latest_data["line"]["scaled"]
                 debug_info["pos"] = calculate_position(line, debug_info["pos"], invert=False, prevent_invert=True)
 
-                if debug_info["line_contour_switches"] in ["010"]:
+                if debug_info["line_contour_switches"] in ["010"] and sum(latest_data["line"]["scaled"]) > 70:
                     print(debug_prefix + "Found line")
                     return True
                 
+            # Check if the side ultrasonic sensor sees something within the requested range, and return if so
+            if less_than and latest_data["distance_side"] < distance:
+                return False
+            elif not less_than and latest_data["distance_side"] >= distance:
+                return False
+        return False
+
+    def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
+        """
+        Obstacle avoidance helper:
+        Aligns to the given bearing.
+
+        Args:
+            target_bearing (int): The bearing to align to.
+            cutoff_error (int): The error threshold to stop aligning.
+            timeout (int, optional): The timeout in seconds. Defaults to 10.
+            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
+        """
+        # Restrict target_bearing to 0-359
+        target_bearing = target_bearing % 360
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_bearing = cmps.read_bearing_16bit()
+            error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+            if error < cutoff_error:
+                print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
+                m.stop_all()
                 return True
             
-            if latest_data["distance_side"] < distance and less_than:
-                return False
-            elif latest_data["distance_side"] >= distance and not less_than:
-                return False
-        
-        return False
+            max_speed = 50 # Speed to rotate when error is 180
+            min_speed = 25 # Speed to rotate when error is 0
+
+            rotate_speed = min_speed + ((max_speed - min_speed)/math.sqrt(180)) * math.sqrt(error)
+
+            # Rotate in the direction closest to the bearing
+            if (current_bearing - target_bearing) % 360 < 180:
+                m.run_tank(-rotate_speed, rotate_speed)
+            else:
+                m.run_tank(rotate_speed, -rotate_speed)
+
+            print(f"{debug_prefix}Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}\tSpeed: {rotate_speed}")
+
+    m.run_tank_for_time(-40, -40, 500)
+
+    start_bearing = cmps.read_bearing_16bit()
+
+    align_to_bearing(start_bearing - 90, 1, debug_prefix="STEP 1 - ")
 
     turn_count = 0
     while turn_count < 4:
@@ -389,7 +432,7 @@ def avoid_obstacle() -> None:
 
         # Did not find a line, so keep going forward a bit, turn right, and try again
         m.run_tank_for_time(25, 25, 900)
-        m.run_tank_for_time(100, -100, 950) # 90 degree right turn
+        align_to_bearing(start_bearing + (90 * turn_count), 1, debug_prefix="STEP C, TURN " + str(turn_count) + " - ") # 90 degree right turn
         turn_count += 1
         
         time.sleep(0.5)
