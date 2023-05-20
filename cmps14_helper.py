@@ -18,6 +18,13 @@ class CMPS14:
         self.bus = smbus2.SMBus(i2c_bus)
         self.address = i2c_address
 
+        self.last_values = {
+            "bearing_8bit": 0,
+            "bearing_16bit": 0,
+            "pitch": 0,
+            "roll": 0,
+        }
+
     def read_byte(self, register: int) -> int:
         """
         Read a single byte from a specific register.
@@ -73,7 +80,12 @@ class CMPS14:
         Returns:
             int: Compass bearing in 8-bit.
         """
-        return self.read_byte(0x01)
+        try:
+            self.last_values["bearing_8bit"] = self.read_byte(0x01)
+        except OSError:
+            print("[WARN] OSError while reading bearing_8bit. Returning last value.")
+            pass
+        return self.last_values["bearing_8bit"]
 
     def read_bearing_16bit(self) -> float:
         """
@@ -83,8 +95,13 @@ class CMPS14:
         Returns:
             float: Compass bearing in 16-bit, scaled to 0-359.9 degrees.
         """
-        value = self.read_word(0x02)
-        return value / 10.0  # Scale to 0-359.9°
+        try:
+            value = self.read_word(0x02)
+            self.last_values["bearing_16bit"] = value / 10.0 # Scale to 0-359.9°
+        except OSError:
+            print("[WARN] OSError while reading bearing_16bit. Returning last value.")
+            pass
+        return self.last_values["bearing_16bit"] 
 
     def read_pitch(self) -> int:
         """
@@ -93,7 +110,12 @@ class CMPS14:
         Returns:
             int: Pitch angle. (+/- 90°)
         """
-        return self.read_byte(0x04)
+        try:
+            self.last_values["pitch"] = self.read_byte(0x04)
+        except OSError:
+            print("[WARN] OSError while reading pitch. Returning last value.")
+            pass
+        return self.last_values["pitch"]
 
     def read_roll(self) -> int:
         """
@@ -102,5 +124,10 @@ class CMPS14:
         Returns:
             int: Roll angle. (+/- 90°)
         """
-        return self.read_byte(0x05)
+        try:
+            self.last_values["roll"] = self.read_byte(0x05)
+        except OSError:
+            print("[WARN] OSError while reading roll. Returning last value.")
+            pass
+        return self.last_values["roll"]
     
