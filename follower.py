@@ -10,13 +10,13 @@ import math
 import busio
 import adafruit_tca9548a
 import adafruit_ads1x15.ads1015 as ADS
-import motorkit_helper as m
+import helper_motorkit as m
 import threading
 import multiprocessing
 from PiicoDev_VEML6040 import PiicoDev_VEML6040
 from typing import Union, List, Tuple, Dict
 from adafruit_ads1x15.analog_in import AnalogIn as ADSAnalogIn
-from cmps14_helper import CMPS14
+from helper_cmps14 import CMPS14
 
 # Calibrated values for the reflectivity array
 las_min = [1312, 1248, 1280, 1280, 1248, 1280, 1264, 1312, 1296, 1248, 1264, 1344] 
