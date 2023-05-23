@@ -49,7 +49,7 @@ calibration_map = np.array(calibration_data["calibration_map"])
 # Camera stuff
 black_contour_threshold = 5000
 config_values = {
-    "black_line_threshold": [200, 255],
+    "black_line_threshold": [178, 255],
     "green_turn_hsv_threshold": [
         np.array([26, 31, 81]),
         np.array([69, 234, 229]),
@@ -65,29 +65,47 @@ follower_speed = 40
 lastError = 0
 integral = 0
 # Motor stuff
-MOTOR_ENABLE = False # For debugging
 max_motor_speed = 100
 
 greenCenter = None
 
 
+# Jank functions
 
-def distance(point):
+# Calculate the distance between a point, and the last line position
+def distToLastLine(point):
     if (point[0][0] > last_line_pos[0]):
         return np.linalg.norm(np.array(point[0]) - last_line_pos)
     else:
         return np.linalg.norm(last_line_pos - point[0])
-distanceFormula = np.vectorize(distance)
+    
+# Vectorize the distance function so it can be applied to a numpy array
+# This helps speed up calculations when calculating the distance of many points
+distToLastLineFormula = np.vectorize(distToLastLine)
+
+# Processes a set of contours to find the best one to follow
+# Filters out contours that are too small, 
+# then, sorts the remaining contours by distance from the last line position
 def FindBestContours(contours):
+    # Create a new array with the contour area, contour, and distance from the last line position (to be calculated later)
     contour_values = np.array([[cv2.contourArea(contour), cv2.minAreaRect(contour), contour, 0] for contour in contours ], dtype=object)
+
+    # In case we have no contours, just return an empty array instead of processing any more
     if len(contour_values) == 0:
         return []
+    
+    # Filter out contours that are too small
     contour_values = contour_values[contour_values[:, 0] > black_contour_threshold]
-    if (len(contour_values) < 2):
+    
+    # No need to sort if there is only one contour
+    if len(contour_values) <= 1:
         return contour_values
-    contour_values[:, 3] = distanceFormula(contour_values[:, 1])
+
+    # Sort contours by distance from the last known optimal line position
+    contour_values[:, 3] = distToLastLineFormula(contour_values[:, 1])
     contour_values = contour_values[np.argsort(contour_values[:, 3])]
     return contour_values
+
 current_time = time.time()
 
 def pid(error): # Calculate error beforehand
@@ -265,6 +283,8 @@ def main_program():
         # cv2.imwrite("testImg.jpg", img0)
         if (img0 is None):
             continue
+        img0 = img0.copy()
+
         img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]-70]
         img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
 
@@ -290,6 +310,71 @@ def main_program():
         img0_line = cv2.dilate(img0_binary, np.ones((5,5),np.uint8), iterations=2)
         img0_line = cv2.bitwise_or(img0_binary, cv2.bitwise_not(img0_green))
 
+        # -----------
+
+        raw_white_contours, white_hierarchy = cv2.findContours(img0_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Filter white contours based on area
+        white_contours = []
+        for contour in raw_white_contours:
+            if (cv2.contourArea(contour) > 1000):
+                white_contours.append(contour)
+        img0_binary_not = cv2.bitwise_not(img0_binary)
+        
+        # Find black contours
+        # If there are no black contours, skip the rest of the loop
+        black_contours, black_hierarchy = cv2.findContours(img0_binary_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        if (len(black_contours) == 0):
+            print("No black contours found")
+            continue
+        
+        # -----------
+        # GREEN TURNS
+        # -----------
+
+        is_there_green = np.count_nonzero(img0_green == 0)
+        turning = False
+        black_contours_turn = None
+
+        # print("Green: ", is_there_green)
+        
+        # Check if there is a significant amount of green pixels
+        if is_there_green > 2000: #and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
+            unfiltered_green_contours, green_hierarchy = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            # cv2.drawContours(img0, green_contours[0], -1, (255,255,0), 3)
+
+            # TODO
+
+            print("GREEN TURN STUFF")
+        else:
+            greenCenter = None # Reset greenturn memory if no green found!
+
+
+        # -----------
+        # INTERSECTIONS
+        # -----------
+
+        # TODO
+
+        # -----------
+        # REST OF LINE LINE FOLLOWER
+        # -----------
+
+        #Find the black contours
+        sorted_black_contours = FindBestContours(black_contours)
+        if (len(sorted_black_contours) == 0):
+            print("No black contours found")
+
+            print("STEER TEMP: GO FORWARD")
+            continue
+        chosen_black_contour = sorted_black_contours[0]
+
+        cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
+        
+        # Update the reference position for subsequent calculations
+        last_line_pos = np.array([chosen_black_contour[1][0][0], chosen_black_contour[1][0][1]])
+
+
 
         preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0", preview_image_img0)
@@ -303,22 +388,29 @@ def main_program():
         preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_green", preview_image_img0_green)
 
-        preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_gray", preview_image_img0_gray)
+        # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_gray", preview_image_img0_gray)
 
-        def mouseCallbackHSV(event, x, y, flags, param):
-            if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
-                # Print HSV value only when the left mouse button is pressed and mouse is moving
-                hsv_value = img0_hsv[y, x]
-                print(f"HSV: {hsv_value}")
-        # Show HSV preview with text on hover to show HSV values
-        preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_hsv", preview_image_img0_hsv)
-        cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
-
+        # def mouseCallbackHSV(event, x, y, flags, param):
+        #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
+        #         # Print HSV value only when the left mouse button is pressed and mouse is moving
+        #         hsv_value = img0_hsv[y, x]
+        #         print(f"HSV: {hsv_value}")
+        # # Show HSV preview with text on hover to show HSV values
+        # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_hsv", preview_image_img0_hsv)
+        # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
 
         preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
+
+        # Show a preview of the image with the contours drawn on it, black as red and white as blue
+
+        preview_image_img0_contours = img0.copy()
+        cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
+        cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,0,255), 3)
+        preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_contours", preview_image_img0_contours)
 
         # frames += 1
 
