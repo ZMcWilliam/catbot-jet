@@ -6,9 +6,9 @@ import helper_camera
 import helper_motorkit as m
 import numpy as np
 import threading
-from gpiozero import AngularServo
 import tkinter as tk
 from tkinter import ttk
+from gpiozero import AngularServo
 
 PORT_SERVO_GATE = 12
 PORT_SERVO_CLAW = 13
@@ -336,4 +336,4 @@ program_thread.daemon = True
 program_thread.start()
 
 # Start the Tkinter UI main loop
-root.mainloop()
+# root.mainloop()
