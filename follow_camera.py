@@ -49,10 +49,10 @@ calibration_map = np.array(calibration_data["calibration_map"])
 # Camera stuff
 black_contour_threshold = 5000
 config_values = {
-    "black_line_threshold": [180, 255],
+    "black_line_threshold": [200, 255],
     "green_turn_hsv_threshold": [
-        np.array([43, 93, 90]),
-        np.array([84, 234, 229]),
+        np.array([26, 31, 81]),
+        np.array([69, 234, 229]),
     ],
 }
 
