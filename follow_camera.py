@@ -374,6 +374,93 @@ while True:
     # Update the reference position for subsequent calculations
     last_line_pos = np.array([chosen_black_contour[1][0][0], chosen_black_contour[1][0][1]])
 
+    # Retrieve the four courner points of the chosen contour
+    black_bounding_box = np.intp(cv2.boxPoints(chosen_black_contour[1]))
+
+    # Error (distance from the center of the image) and angle (of the line) of the chosen contour
+    black_contour_error = int(last_line_pos[0] - (img0.shape[1]/2))
+    black_contour_angle = int(chosen_black_contour[1][2])
+
+    # Sort the black bounding box points based on their y-coordinate (bottom to top)
+    vert_sorted_black_bounding_points = sorted(black_bounding_box, key=lambda point: -point[1])
+
+    # Find leftmost line points based on splitting the bounding box into two vertical halves
+    black_leftmost_line_points = [
+        sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])[0], # Left-most point of the top two points
+        sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])[0]  # Left-most point of the bottom two points
+    ]
+
+    print("BOX", black_bounding_box)
+    print("VERT", vert_sorted_black_bounding_points)
+    print("LINE", black_leftmost_line_points)
+    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51), 10)
+    
+    # The two bottom-most points, sorted from left to right
+    # horz_sorted_black_bounding_points_top_2 = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])
+    # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[0][0], 0), (horz_sorted_black_bounding_points_top_2[0][0], img0.shape[1]), (255, 255, 0), 3)
+    # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[1][0], 0), (horz_sorted_black_bounding_points_top_2[1][0], img0.shape[1]), (255, 125, 0), 3)
+
+
+    black_contour_angle_new = black_contour_angle
+    # If       the top left point is to the right of the bottom left point
+    #  or, if  the contour angle is above 80 and the last angle is close to 0 (+- 5)
+    #  or, if  the contour angle is above 80 and the current angle is close to 0 (+- 2) (bottom left point X-2 < top left point X < bottom left point X+2)
+    # Then, the contour angle is probably 90 degrees off what we want it to be, so subtract 90 degrees from it
+    if (
+        black_leftmost_line_points[0][0] > black_leftmost_line_points[1][0]
+        or (
+            -5 < last_ang < 5 
+            and black_contour_angle_new > 80
+        ) 
+        or (
+            black_leftmost_line_points[1][0]-2 < black_leftmost_line_points[0][0] < black_leftmost_line_points[1][0]+2 
+            and black_contour_angle_new > 80
+        )
+    ):
+        black_contour_angle_new = black_contour_angle_new-90
+    
+
+    black_x, black_y, black_w, black_h = cv2.boundingRect(chosen_black_contour[2])
+
+    # If the contour angle is above 70 and the line is at the edge of the image, then flip the angle
+    if (black_contour_angle_new > 70 and black_x == 0 or black_contour_angle_new < -70 and black_x > img0.shape[1]-5):
+        black_contour_angle_new = black_contour_angle_new*-1
+        changed_angle = True
+
+    # If we haven't already changed the angle, 
+    #   and if the contour angle is above 80 and the last angle is below -20
+    #   or  if the contour angle is below -80 and the last angle is above 20 
+    # Then flip the angle
+    #
+    # This is to catch the case where the angle has flipped to the other side and needs to be flipped back
+    if (
+        not changed_angle 
+        and (
+            (black_contour_angle_new > 80 and last_ang < -20) 
+            or (black_contour_angle_new < -80 and last_ang > 20)
+        )
+    ):
+        black_contour_angle_new = black_contour_angle_new*-1
+        changed_ang = True
+    
+    last_ang = black_contour_angle_new
+
+    #Motor stuff
+    current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
+    current_position *= 100
+    
+    current_steering = pid(current_position)
+    
+    if time.time()-delay > 2:
+        print(f"TEMP STEER: {-pid(current_position)}")
+    elif time.time()-delay <= 4:
+        print(f"DELAY {4-time.time()+delay}")
+
+
+
+    # Preview the bounding box in pink
+    cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+
     preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0", preview_image_img0)
 
@@ -406,7 +493,14 @@ while True:
 
     preview_image_img0_contours = img0_clean.copy()
     cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-    cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,0,255), 3)
+    cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
+    
+    cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+
     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_contours", preview_image_img0_contours)
 
