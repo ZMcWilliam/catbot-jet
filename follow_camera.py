@@ -288,6 +288,8 @@ while True:
     img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]-70]
     img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
 
+    img0_clean = img0.copy() # Used for displaying the image without any overlays
+
     # #Find the black in the image
     img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
     # img0_gray = cv2.equalizeHist(img0_gray)
@@ -449,17 +451,18 @@ while True:
     current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
     current_position *= 100
     
-    current_steering = pid(current_position)
+    current_steering = pid(-current_position)
     
     if time.time()-delay > 2:
-        print(f"TEMP STEER: {-pid(current_position)}")
+        motor_vals = m.run_steer(follower_speed, 100, current_steering)
+        print(f"Steering: {int(current_steering)} \t{str(motor_vals)}")
     elif time.time()-delay <= 4:
         print(f"DELAY {4-time.time()+delay}")
 
 
 
-    # Preview the bounding box in pink
     cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51), 10)
 
     preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0", preview_image_img0)
