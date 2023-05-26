@@ -57,7 +57,7 @@ config_values = {
 }
 
 # Constants for PID control
-KP = 0.07 # Proportional gain
+KP = 1 # Proportional gain
 KI = 0  # Integral gain
 KD = 0.1  # Derivative gain
 follower_speed = 40
@@ -391,14 +391,22 @@ while True:
         sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])[0], # Left-most point of the top two points
         sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])[0]  # Left-most point of the bottom two points
     ]
-
-    print("BOX", black_bounding_box)
-    print("VERT", vert_sorted_black_bounding_points)
-    print("LINE", black_leftmost_line_points)
-    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51), 10)
     
-    # The two bottom-most points, sorted from left to right
-    # horz_sorted_black_bounding_points_top_2 = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])
+    # The two top-most points, sorted from left to right
+    horz_sorted_black_bounding_points_top_2 = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])
+    
+    bigTurnMargin = 30
+    # If the angle of the contour is big enough and the contour is close to the edge of the image (within bigTurnMargin pixels)
+    # Then, the line likely is a big turn and we need to turn more
+    isBigTurn = (
+        black_contour_angle > 85 
+        and (
+            horz_sorted_black_bounding_points_top_2[0][0] < bigTurnMargin  # If the leftmost point is close (bigTurnMargin) to the left side of the image
+            or 
+            horz_sorted_black_bounding_points_top_2[1][0] > img0.shape[0] - bigTurnMargin # 
+        )
+    )
+
     # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[0][0], 0), (horz_sorted_black_bounding_points_top_2[0][0], img0.shape[1]), (255, 255, 0), 3)
     # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[1][0], 0), (horz_sorted_black_bounding_points_top_2[1][0], img0.shape[1]), (255, 125, 0), 3)
 
@@ -408,15 +416,20 @@ while True:
     #  or, if  the contour angle is above 80 and the last angle is close to 0 (+- 5)
     #  or, if  the contour angle is above 80 and the current angle is close to 0 (+- 2) (bottom left point X-2 < top left point X < bottom left point X+2)
     # Then, the contour angle is probably 90 degrees off what we want it to be, so subtract 90 degrees from it
+    # 
+    # This does not apply if the line is a big turn
     if (
-        black_leftmost_line_points[0][0] > black_leftmost_line_points[1][0]
-        or (
-            -5 < last_ang < 5 
-            and black_contour_angle_new > 80
-        ) 
-        or (
-            black_leftmost_line_points[1][0]-2 < black_leftmost_line_points[0][0] < black_leftmost_line_points[1][0]+2 
-            and black_contour_angle_new > 80
+        not isBigTurn
+        and (
+            black_leftmost_line_points[0][0] > black_leftmost_line_points[1][0]
+            or (
+                -5 < last_ang < 5 
+                and black_contour_angle_new > 80
+            ) 
+            or (
+                black_leftmost_line_points[1][0]-2 < black_leftmost_line_points[0][0] < black_leftmost_line_points[1][0]+2 
+                and black_contour_angle_new > 80
+            )
         )
     ):
         black_contour_angle_new = black_contour_angle_new-90
@@ -503,6 +516,9 @@ while True:
     cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
     cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
     cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+
+    if isBigTurn:
+        cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_contours", preview_image_img0_contours)
