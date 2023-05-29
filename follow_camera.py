@@ -425,12 +425,86 @@ while True:
             black_contours_new, black_hierarchy_new = cv2.findContours(img0_binary_new_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(preview_image_img0_contours, black_contours_new, -1, (0,125,125), 5)
 
+    if not turning:
+        img0_line_new = img0_line.copy()
+        if (len(white_contours) == 4):
+            # Get the center of each contour
+            white_contours_with_center = [(contour, centerOfContour(contour)) for contour in white_contours]
+
+            # Sort the contours from left to right - Based on the centre of the contour's horz val
+            sorted_contours_horz = sorted(white_contours_with_center, key=lambda contour: contour[1][0])
+            
+            # Sort the contours from top to bottom, for each side of the image - Based on the centre of the contour's vert val
+            contour_BL, contour_TL = tuple(sorted(sorted_contours_horz[:2], reverse=True, key=lambda contour: contour[1][1]))
+            contour_BR, contour_TR = tuple(sorted(sorted_contours_horz[2:], reverse=True, key=lambda contour: contour[1][1]))
+
+            # Simplify the contours to get the corner points
+            approx_BL = simplifiedContourPoints(contour_BL[0], 0.03)
+            approx_TL = simplifiedContourPoints(contour_TL[0], 0.03)
+            approx_BR = simplifiedContourPoints(contour_BR[0], 0.03)
+            approx_TR = simplifiedContourPoints(contour_TR[0], 0.03)
+            
+            cv2.circle(img0, tuple(contour_BL[1]), 5, (0,0,255), -1)
+            cv2.circle(img0, tuple(contour_TL[1]), 5, (0,0,255), -1)
+            cv2.circle(img0, tuple(contour_BR[1]), 5, (0,0,255), -1)
+            cv2.circle(img0, tuple(contour_TR[1]), 5, (0,0,255), -1)
+            cv2.putText(img0, "BL", tuple(contour_BL[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+            cv2.putText(img0, "TL", tuple(contour_TL[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+            cv2.putText(img0, "BR", tuple(contour_BR[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+            cv2.putText(img0, "TR", tuple(contour_TR[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
+
+            cv2.line(img0, tuple(contour_BL[1]), tuple(contour_TR[1]), (0,255,125), 4)
+            cv2.line(img0, tuple(contour_TL[1]), tuple(contour_BR[1]), (0,255,125), 4)
+
+            # Middle of contour centres
+            mid_point = (
+                int((contour_BL[1][0] + contour_TL[1][0] + contour_BR[1][0] + contour_TR[1][0]) / 4),
+                int((contour_BL[1][1] + contour_TL[1][1] + contour_BR[1][1] + contour_TR[1][1]) / 4)
+            )
+
+            cv2.circle(img0, mid_point, 5, (0,255,0), -1)
+
+            # Get the closest point of the approx contours to the mid point
+            def closestPointToMidPoint(approx_contour, mid_point):
+                return sorted(approx_contour, key=lambda point: pointDistance(point, mid_point))[0]
+            
+            closest_BL = closestPointToMidPoint(approx_BL, mid_point)
+            closest_TL = closestPointToMidPoint(approx_TL, mid_point)
+            closest_BR = closestPointToMidPoint(approx_BR, mid_point)
+            closest_TR = closestPointToMidPoint(approx_TR, mid_point)
+
+            cv2.circle(img0, closest_BL, 10, (255,0,0), -1)
+            cv2.circle(img0, closest_TL, 10, (255,0,0), -1)
+            cv2.circle(img0, closest_BR, 10, (255,0,0), -1)
+            cv2.circle(img0, closest_TR, 10, (255,0,0), -1)
+
+            img0_line_new = helper_intersections.CutMaskWithLine(closest_BL, closest_TL, img0_line_new, "left")
+            img0_line_new = helper_intersections.CutMaskWithLine(closest_BR, closest_TR, img0_line_new, "right")
+            
+            cv2.line(img0, closest_BL, closest_TL, (0,255,0), 8)
+            cv2.line(img0, closest_BR, closest_TR, (0,255,255), 8)
+
+            current_linefollowing_state = "4-ng"
+            changed_black_contour = cv2.bitwise_not(img0_line_new)
+
     if (changed_black_contour is not False):
         print("Changed black contour, LF State: ", current_linefollowing_state)
+        cv2.drawContours(img0, black_contours, -1, (0,0,255), 2)
         black_contours, black_hierarchy = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        # cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,0,255), 2)
+        # cv2.imshow("changed_black_contour", changed_black_contour)
         changed_black_contour = False
 
+    preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_contours_preview", preview_image_img0_contours)
+
+
+    k = cv2.waitKey(1)
+    if (k & 0xFF == ord('q')):
+        # pr.print_stats(SortKey.TIME)
+        program_active = False
+        break
 
     # -----------
     # REST OF LINE LINE FOLLOWER
@@ -442,6 +516,15 @@ while True:
         print("No black contours found")
 
         print("STEER TEMP: GO FORWARD")
+        
+
+        preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0", preview_image_img0)
+        k = cv2.waitKey(1)
+        if (k & 0xFF == ord('q')):
+            # pr.print_stats(SortKey.TIME)
+            program_active = False
+            break
         continue
     chosen_black_contour = sorted_black_contours[0]
     
@@ -548,7 +631,7 @@ while True:
 
     # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
     # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
-    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51), 10)
+    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
     preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0", preview_image_img0)
@@ -592,6 +675,8 @@ while True:
 
     if isBigTurn:
         cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_contours", preview_image_img0_contours)
