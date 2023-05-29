@@ -4,6 +4,7 @@ import json
 import math
 import helper_camera
 import helper_motorkit as m
+import helper_intersections
 import numpy as np
 import threading
 import tkinter as tk
@@ -355,8 +356,76 @@ while True:
     # -----------
     # INTERSECTIONS
     # -----------
+    preview_image_img0_contours = img0_clean.copy()
+    # cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,255), 3)
 
-    # TODO
+    if not turning:
+        # Check for blank (straight) intersections
+        big_white_contours = []
+        for contour in white_contours:
+            if cv2.contourArea(contour) > 1000:
+                big_white_contours.append(contour)
+
+        if len(big_white_contours) > 2:
+            bottom_white_contours = sorted(big_white_contours, key=lambda contour: -centerOfContour(contour)[1])[:2]
+            bottom_white_contours = sorted(bottom_white_contours, key=lambda contour: centerOfContour(contour)[0])
+            
+            bl_point = simplifiedContourPoints(bottom_white_contours[0])
+            # bl_point = cv2.boxPoints(cv2.minAreaRect(bottom_white_contours[0]))
+            bl_point = sorted(bl_point, key=lambda point: -point[0])
+            bl_point = sorted(bl_point, key=lambda point: -point[1])[0]
+            bl_point = np.array(bl_point).astype(int)
+
+            br_point = simplifiedContourPoints(bottom_white_contours[1])
+            # br_point = cv2.boxPoints(cv2.minAreaRect(bottom_white_contours[1]))
+            br_point = sorted(br_point, key=lambda point: point[0])
+            br_point = sorted(br_point, key=lambda point: -point[1])[0]
+            br_point = np.array(br_point).astype(int)
+
+            top_white_contours = sorted(big_white_contours, key=lambda contour: centerOfContour(contour)[1])[:2]
+            top_white_contours = sorted(top_white_contours, key=lambda contour: centerOfContour(contour)[0])
+
+            tl_point = simplifiedContourPoints(top_white_contours[0])
+            # tl_point = cv2.boxPoints(cv2.minAreaRect(top_white_contours[0]))
+            tl_point = sorted(tl_point, key=lambda point: -point[0])
+            tl_point = sorted(tl_point, key=lambda point: point[1])[0]
+            tl_point = np.array(tl_point).astype(int)
+
+            tr_point = simplifiedContourPoints(top_white_contours[1])
+            # tr_point = cv2.boxPoints(cv2.minAreaRect(top_white_contours[1]))
+            tr_point = sorted(tr_point, key=lambda point: point[0])
+            tr_point = sorted(tr_point, key=lambda point: point[1])[0]
+            tr_point = np.array(tr_point).astype(int)
+
+            cv2.line(img0, bl_point, tl_point, (255, 255, 0), 3)
+            cv2.line(img0, br_point, tr_point, (255, 0, 125), 3)
+
+            img0_binary_new = img0_binary.copy()
+
+            img0_binary_new = helper_intersections.CutMaskWithLine(bl_point, tl_point, img0_binary_new, "right")
+            img0_binary_new = helper_intersections.CutMaskWithLine(br_point, tr_point, img0_binary_new, "left")
+            img0_binary_new_not = cv2.bitwise_not(img0_binary_new)
+
+            black_contours_new, black_hierarchy_new = cv2.findContours(img0_binary_new_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(preview_image_img0_contours, black_contours_new, -1, (0,0,125), 5)
+            
+            last_intersection_time = time.time()
+        elif time.time() - last_intersection_time < 0.5:
+            img0_binary_new = img0_binary.copy()
+
+            img0_binary_new = helper_intersections.CutMaskWithLine(bl_point, tl_point, img0_binary_new, "right")
+            img0_binary_new = helper_intersections.CutMaskWithLine(br_point, tr_point, img0_binary_new, "left")
+            img0_binary_new_not = cv2.bitwise_not(img0_binary_new)
+
+            black_contours_new, black_hierarchy_new = cv2.findContours(img0_binary_new_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(preview_image_img0_contours, black_contours_new, -1, (0,125,125), 5)
+
+    if (changed_black_contour is not False):
+        print("Changed black contour, LF State: ", current_linefollowing_state)
+        black_contours, black_hierarchy = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        changed_black_contour = False
+
+    cv2.imshow("img0_contours_preview", preview_image_img0_contours)
 
     # -----------
     # REST OF LINE LINE FOLLOWER
@@ -370,8 +439,6 @@ while True:
         print("STEER TEMP: GO FORWARD")
         continue
     chosen_black_contour = sorted_black_contours[0]
-
-    cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
     
     # Update the reference position for subsequent calculations
     last_line_pos = np.array([chosen_black_contour[1][0][0], chosen_black_contour[1][0][1]])
@@ -474,14 +541,15 @@ while True:
 
 
 
-    cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+    # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
+    # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
     cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51), 10)
 
     preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0", preview_image_img0)
 
-    preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0_binary", preview_image_img0_binary)
+    # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
+    # cv2.imshow("img0_binary", preview_image_img0_binary)
 
     preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_line", preview_image_img0_line)
@@ -502,8 +570,8 @@ while True:
     # cv2.imshow("img0_hsv", preview_image_img0_hsv)
     # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
 
-    preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
+    # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
+    # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
 
     # Show a preview of the image with the contours drawn on it, black as red and white as blue
 
