@@ -34,29 +34,31 @@ def Distance(p1, p2):
 YFromX = np.vectorize(GetYFromX)
 
 def CutMaskWithLine(p1, p2, mask, direction):
-    # try:
-    if (p1[0] > p2[0]):
-        p1,p2=p2,p1
-    m,c = GetLineEquation(p1, p2)
-    if (m is None):
-        if (direction == "left"):
-            mask[:, :p1[0]] = 255
+    try:
+        if (p1[0] > p2[0]):
+            p1,p2=p2,p1
+        m,c = GetLineEquation(p1, p2)
+        if (m is None):
+            if (direction == "left"):
+                mask[:, :p1[0]] = 255
+            else:
+                mask[:, p2[0]:] = 255
+            return mask
+        # print(m,c)
+        p1 = [int(GetXFromY(m, c, 0)), 0]
+        p2 = [int(GetXFromY(m, c, mask.shape[0])), mask.shape[0]]
+        if (direction == "right"):
+            contour = np.array([p1, [mask.shape[1], 0], [mask.shape[1], mask.shape[0]], p2]).astype(int)
         else:
-            mask[:, p2[0]:] = 255
+            contour = np.array([p1, [0, 0], [0, mask.shape[0]], p2]).astype(int)
+        new_mask = np.zeros(mask.shape, dtype=np.uint8)
+        cv2.drawContours(new_mask, [contour], 0, 255, -1)
+        new_mask = cv2.bitwise_or(mask, new_mask)
+        return new_mask
+    except Exception as e:
+        print("Error in CutMaskWithLine")
+        print(e)
         return mask
-    # print(m,c)
-    p1 = [int(GetXFromY(m, c, 0)), 0]
-    p2 = [int(GetXFromY(m, c, mask.shape[0])), mask.shape[0]]
-    print("p1", p1, p2)
-    if (direction == "right"):
-        contour = np.array([p1, [mask.shape[1], 0], [mask.shape[1], mask.shape[0]], p2]).astype(int)
-    else:
-        contour = np.array([p1, [0, 0], [0, mask.shape[0]], p2]).astype(int)
-    new_mask = np.zeros(mask.shape, dtype=np.uint8)
-    cv2.drawContours(new_mask, [contour], 0, 255, -1)
-    new_mask = cv2.bitwise_not(new_mask)
-    new_mask = cv2.bitwise_or(mask, new_mask)
-    return new_mask
 
 # https://stackoverflow.com/questions/3838329/how-can-i-check-if-two-segments-intersect
 # TYSM GRUNDRIG!!!!!
