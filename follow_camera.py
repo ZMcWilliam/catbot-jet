@@ -315,18 +315,23 @@ while True:
 
     # -----------
 
-    raw_white_contours, white_hierarchy = cv2.findContours(img0_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    raw_white_contours, white_hierarchy = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     # Filter white contours based on area
     white_contours = []
     for contour in raw_white_contours:
         if (cv2.contourArea(contour) > 1000):
             white_contours.append(contour)
-    img0_binary_not = cv2.bitwise_not(img0_binary)
+
+    if (len(white_contours) == 0):
+        print("No white contours found")
+        continue
+
     
     # Find black contours
     # If there are no black contours, skip the rest of the loop
-    black_contours, black_hierarchy = cv2.findContours(img0_binary_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    img0_line_not = cv2.bitwise_not(img0_line)
+    black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     if (len(black_contours) == 0):
         print("No black contours found")
         continue
