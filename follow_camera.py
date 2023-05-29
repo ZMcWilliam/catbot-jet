@@ -44,7 +44,7 @@ angle_weight = 1-error_weight
 # Load the calibration map from the JSON file
 with open("calibration.json", "r") as json_file:
     calibration_data = json.load(json_file)
-calibration_map = np.array(calibration_data["calibration_map"])
+calibration_map = np.array(calibration_data["calibration_map_w"])
 
 # Camera stuff
 black_contour_threshold = 5000

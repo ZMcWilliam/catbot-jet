@@ -9,7 +9,6 @@ cams.start_stream(0)
 
 calibration_images = {
     "w": [],
-    "b": [],
 }
 
 NUM_CALIBRATION_IMAGES = 50
@@ -19,9 +18,7 @@ time.sleep(1)
 # Load the calibration map from the JSON file if it exists
 calibration_data = {
     "calibration_value_w": 0, 
-    "calibration_value_b": 0,
     "calibration_map_w": [],
-    "calibration_map_b": [],
 }
 try:
     with open("calibration.json", "r") as json_file:
@@ -30,7 +27,7 @@ except:
     pass # If the file doesn't exist, we'll create it later
 
 while True:
-    requested = input("Enter 'w' for white calibration, 'b' for black calibration, or 'q' to quit: ")
+    requested = input("Enter 'w' for white calibration, or 'q' to quit: ")
     
     if requested == "q":
         break
