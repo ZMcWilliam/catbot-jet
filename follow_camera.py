@@ -430,12 +430,14 @@ while True:
 
     if not turning:
         img0_line_new = img0_line.copy()
-        if (len(white_contours) == 3):
+        # Filter white contours to have a minimum area before we accept them 
+        white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 2300]
+        if (len(white_contours_filtered) == 3):
             # Get the center of each contour
-            white_contours_with_center = [(contour, centerOfContour(contour)) for contour in white_contours]
+            white_contours_filtered_with_center = [(contour, centerOfContour(contour)) for contour in white_contours_filtered]
 
             # Sort the contours from left to right - Based on the centre of the contour's horz val
-            sorted_contours_horz = sorted(white_contours_with_center, key=lambda contour: contour[1][0])
+            sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
 
             # Simplify the contours to get the corner points
             approx_contours = [simplifiedContourPoints(contour[0], 0.03) for contour in sorted_contours_horz]
@@ -457,7 +459,6 @@ while True:
 
             # Get the closest point of the approx contours to the mid point
             def closestPointToMidPoint(approx_contour, mid_point):
-                print(approx_contour)
                 return sorted(approx_contour, key=lambda point: pointDistance(point, mid_point))[0]
 
             # Get the closest points of each approx contour to the mid point, and store the index of the contour to back reference later
@@ -473,6 +474,36 @@ while True:
             # Draw the closest points
             for i, point in enumerate(closest_2_points_vert_sort):
                 cv2.circle(img0, point[0], 10, (0, 255, 255), -1)
+                cv2.putText(img0, f"{point[1]}-{i}", point[0], cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+            # If a point is touching the bottom of the screen, it is quite possibly invalid and will cause some issues with cutting
+            # So, we will find the next best point, the point inside the other contour that is at the top of the screen, and is closest to the X value of the other point
+            for i, point in enumerate(closest_2_points_vert_sort):
+                if point[0][1] > img0_line_new.shape[0]-3 or point[0][1] < 3:
+                    # Find the closest point to the x value of the other point
+                    cv2.circle(img0, closest_2_points_vert_sort[1-i][0], 15, (0, 0, 255), -1)
+                    
+                    other_point_x = closest_2_points_vert_sort[1-i][0][0]
+                    other_point_approx_contour_i = closest_2_points_vert_sort[1-i][1]
+
+                    closest_points_to_other_x = sorted(approx_contours[other_point_approx_contour_i], key=lambda point: abs(point[0] - other_point_x))
+                    new_valid_points = [
+                        point for point in closest_points_to_other_x 
+                        if not np.isin(point, [
+                            closest_2_points_vert_sort[0][0],
+                            closest_2_points_vert_sort[1][0]
+                        ]).any()
+                    ]
+                    if len(new_valid_points) == 0:
+                        print(f"Point {i} is at an edge, but no new valid points were found")
+                        continue
+
+                    closest_2_points_vert_sort = sorted([[new_valid_points[0], other_point_approx_contour_i], closest_2_points_vert_sort[1-i]], key=lambda point: point[0][1])
+                    print(f"Point {i} is at an edge, replacing with {new_valid_points[0]}")
+        
+            # Draw the new closest points
+            for i, point in enumerate(closest_2_points_vert_sort):
+                cv2.circle(img0, point[0], 7, (255, 0, 255), -1)
                 cv2.putText(img0, f"{point[1]}-{i}", point[0], cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
             split_line = [point[0] for point in closest_2_points_vert_sort]
@@ -495,7 +526,6 @@ while True:
             # Draw the contour center points, green for left, blue for right
             for i, side in enumerate(contour_center_point_sides):
                 for point in side:
-                    print("Point", point)
                     cv2.circle(img0, point, 10, (0, 255, 0) if i == 0 else (255, 0, 0), -1)
 
             # For the topmost contour in closest_2_points_vert_sort, find the edges that it touches
@@ -512,6 +542,7 @@ while True:
                         edges.append("bottom")
                 return edges
 
+            # Get the edges that the contour not relevant to the closest points touches
             edges_big = sorted(get_touching_edges(approx_contours[sorted_closest_points[2][1]]))
 
             # # Draw a line on the edges
@@ -532,6 +563,16 @@ while True:
             if edges_big == ["bottom", "left", "right"] or edges_big == ["left", "right", "top"]:
                 cut_direction = not cut_direction
 
+            # If the contour not relevant to the closest points is really small (area), we are probably just entering the intersection,
+            # So we need to follow the line that is perpendicular to the large line
+            # We ignore this if edges_big does not include the bottom, because we could accidently have the wrong contour in some weird angle
+            elif cv2.contourArea(sorted_contours_horz[sorted_closest_points[2][1]][0]) < 7000 and "bottom" in edges_big:
+                cut_direction = not cut_direction
+
+            # CutMaskWithLine will fail if the line is flat, so we need to make sure that the line is not flat
+            if closest_2_points_vert_sort[0][0][1] == closest_2_points_vert_sort[1][0][1]:
+                closest_2_points_vert_sort[0][0][1] += 1 # Move the first point up by 1 pixel
+                
             img0_line_new = helper_intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
 
             cv2.line(img0, closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], (0,255,0), 8)
@@ -539,12 +580,12 @@ while True:
             current_linefollowing_state = "3-ng"
             changed_black_contour = cv2.bitwise_not(img0_line_new)
 
-        if (len(white_contours) == 4):
+        if (len(white_contours_filtered) == 4):
             # Get the center of each contour
-            white_contours_with_center = [(contour, centerOfContour(contour)) for contour in white_contours]
+            white_contours_filtered_with_center = [(contour, centerOfContour(contour)) for contour in white_contours_filtered]
 
             # Sort the contours from left to right - Based on the centre of the contour's horz val
-            sorted_contours_horz = sorted(white_contours_with_center, key=lambda contour: contour[1][0])
+            sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
             
             # Sort the contours from top to bottom, for each side of the image - Based on the centre of the contour's vert val
             contour_BL, contour_TL = tuple(sorted(sorted_contours_horz[:2], reverse=True, key=lambda contour: contour[1][1]))
