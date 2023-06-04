@@ -442,7 +442,7 @@ while True:
             else:
                 # If none of the cutter points are at the bottom of the screen, and current_linefollowing_state has an "-ex" in it (exiting something), or we were just in a 3/4-way intersection
                 # then we gotta keep cutting that line until we are fully out
-                if (left_cutter_points[1][1] < img0_binary.shape[0]-3 and right_cutter_points[1][1] < img0_binary.shape[0]-3 
+                if (left_cutter_points[1][1] < img0_binary.shape[0]-3 or right_cutter_points[1][1] < img0_binary.shape[0]-3 
                     and ("-ex" in current_linefollowing_state or "3-ng" in current_linefollowing_state or "4-ng" in current_linefollowing_state)
                 ):
                     if "3-ng" in current_linefollowing_state:
