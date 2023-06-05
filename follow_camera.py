@@ -160,6 +160,7 @@ start_time = time.time()
 # last_green_found_time = start_time - 1000
 last_intersection_time = time.time() - 100
 fpsTime = time.time()
+fpsCurrent = 0
 delay = time.time()
 
 double_check = 0
@@ -177,10 +178,11 @@ smallKernel = np.ones((5,5),np.uint8)
 # MAIN LOOP
 while True:
     if frames % 20 == 0 and frames != 0:
-        print(f"Processing FPS: {20/(time.time()-fpsTime)}")
+        fpsCurrent = int(20/(time.time()-fpsTime))
         fpsTime = time.time()
-    # if frames % 100 == 0:
-    #     print(f"Camera 0 average FPS: {cams.get_fps(0)}")
+        print(f"Processing FPS: {fpsCurrent} | Camera FPS: {cams.get_fps(0)}")
+
+    changed_black_contour = False
     img0 = cams.read_stream(0)
     # cv2.imwrite("testImg.jpg", img0)
     if (img0 is None):
@@ -713,7 +715,6 @@ while True:
     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
     cv2.imshow("img0_contours", preview_image_img0_contours)
 
-    # frames += 1
 
     k = cv2.waitKey(1)
     if (k & 0xFF == ord('q')):
@@ -721,5 +722,6 @@ while True:
         program_active = False
         break
 
+    frames += 1
 cams.stop()
 cv2.destroyAllWindows()
