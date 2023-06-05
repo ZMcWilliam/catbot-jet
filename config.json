@@ -1,0 +1,7 @@
+{
+    "black_line_threshold": [175, 255],
+    "green_turn_hsv_threshold": [
+        [30, 30, 60],
+        [75, 210, 210]
+    ]
+}

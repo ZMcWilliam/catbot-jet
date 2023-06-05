@@ -7,8 +7,6 @@ import helper_motorkit as m
 import helper_intersections
 import numpy as np
 import threading
-import tkinter as tk
-from tkinter import ttk
 from gpiozero import AngularServo
 from typing import List, Tuple
 
@@ -53,14 +51,13 @@ with open("calibration.json", "r") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = np.array(calibration_data["calibration_map_w"])
 
-# Camera stuff
+with open("config.json", "r") as json_file:
+    config_data = json.load(json_file)
+
 black_contour_threshold = 5000
 config_values = {
-    "black_line_threshold": [178, 255],
-    "green_turn_hsv_threshold": [
-        np.array([26, 31, 55]),
-        np.array([80, 234, 229]),
-    ],
+    "black_line_threshold": config_data["black_line_threshold"],
+    "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]]
 }
 
 # Constants for PID control
@@ -177,132 +174,8 @@ def simplifiedContourPoints(contour, epsilon=0.01):
 
 smallKernel = np.ones((5,5),np.uint8)
 
-
-# TKINTER STUFF
-
-# Create the main application window
-root = tk.Tk()
-root.title("Configuration Settings")
-
-# Create a frame to hold the sliders
-frame = ttk.Frame(root, padding="20")
-frame.pack()
-
-# Create sliders for black_line_threshold
-black_line_label = ttk.Label(frame, text="black_line_threshold")
-black_line_label.pack()
-
-black_line_thresh_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-black_line_thresh_slider.set(config_values["black_line_threshold"][0])  # Set initial value
-black_line_thresh_slider.pack()
-
-black_line_thresh_value = tk.StringVar()
-black_line_thresh_label = ttk.Label(frame, textvariable=black_line_thresh_value)
-black_line_thresh_label.pack()
-
-black_line_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-black_line_max_slider.set(config_values["black_line_threshold"][1])  # Set initial value
-black_line_max_slider.pack()
-
-black_line_max_value = tk.StringVar()
-black_line_max_label = ttk.Label(frame, textvariable=black_line_max_value)
-black_line_max_label.pack()
-
-# Create sliders for green_turn_hsv_threshold
-green_turn_label = ttk.Label(frame, text="green_turn_hsv_threshold")
-green_turn_label.pack()
-
-green_h_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_h_min_slider.set(config_values["green_turn_hsv_threshold"][0][0])  # Set initial value
-green_h_min_slider.pack()
-
-green_h_min_value = tk.StringVar()
-green_h_min_label = ttk.Label(frame, textvariable=green_h_min_value)
-green_h_min_label.pack()
-
-green_s_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_s_min_slider.set(config_values["green_turn_hsv_threshold"][0][1])  # Set initial value
-green_s_min_slider.pack()
-
-green_s_min_value = tk.StringVar()
-green_s_min_label = ttk.Label(frame, textvariable=green_s_min_value)
-green_s_min_label.pack()
-
-green_v_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_v_min_slider.set(config_values["green_turn_hsv_threshold"][0][2])  # Set initial value
-green_v_min_slider.pack()
-
-green_v_min_value = tk.StringVar()
-green_v_min_label = ttk.Label(frame, textvariable=green_v_min_value)
-green_v_min_label.pack()
-
-green_h_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_h_max_slider.set(config_values["green_turn_hsv_threshold"][1][0])  # Set initial value
-green_h_max_slider.pack()
-
-green_h_max_value = tk.StringVar()
-green_h_max_label = ttk.Label(frame, textvariable=green_h_max_value)
-green_h_max_label.pack()
-
-green_s_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_s_max_slider.set(config_values["green_turn_hsv_threshold"][1][1])  # Set initial value
-green_s_max_slider.pack()
-
-green_s_max_value = tk.StringVar()
-green_s_max_label = ttk.Label(frame, textvariable=green_s_max_value)
-green_s_max_label.pack()
-
-green_v_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
-green_v_max_slider.set(config_values["green_turn_hsv_threshold"][1][2])  # Set initial value
-green_v_max_slider.pack()
-
-green_v_max_value = tk.StringVar()
-green_v_max_label = ttk.Label(frame, textvariable=green_v_max_value)
-green_v_max_label.pack()
-
-# Function to handle slider value changes
-def on_slider_change(event):
-    config_values["black_line_threshold"] = [int(black_line_thresh_slider.get()), int(black_line_max_slider.get())]
-
-    green_h_min = int(green_h_min_slider.get())
-    green_s_min = int(green_s_min_slider.get())
-    green_v_min = int(green_v_min_slider.get())
-    green_h_max = int(green_h_max_slider.get())
-    green_s_max = int(green_s_max_slider.get())
-    green_v_max = int(green_v_max_slider.get())
-
-    # Convert the green threshold values to numpy arrays
-    green_turn_hsv_threshold = [
-        np.array([green_h_min, green_s_min, green_v_min]),
-        np.array([green_h_max, green_s_max, green_v_max])
-    ]
-
-    config_values["green_turn_hsv_threshold"] = green_turn_hsv_threshold
-
-    # Update the value labels
-    black_line_thresh_value.set(str(int(black_line_thresh_slider.get())))
-    black_line_max_value.set(str(int(black_line_max_slider.get())))
-    green_h_min_value.set(str(int(green_h_min_slider.get())))
-    green_s_min_value.set(str(int(green_s_min_slider.get())))
-    green_v_min_value.set(str(int(green_v_min_slider.get())))
-    green_h_max_value.set(str(int(green_h_max_slider.get())))
-    green_s_max_value.set(str(int(green_s_max_slider.get())))
-    green_v_max_value.set(str(int(green_v_max_slider.get())))
-
-# Bind the slider event to the on_slider_change function
-black_line_thresh_slider.bind("<ButtonRelease-1>", on_slider_change)
-black_line_max_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_h_min_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_s_min_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_v_min_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_h_max_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_s_max_slider.bind("<ButtonRelease-1>", on_slider_change)
-green_v_max_slider.bind("<ButtonRelease-1>", on_slider_change)
-    
 # MAIN LOOP
-# def main_program():
 while True:
-    changed_black_contour = False
     if frames % 20 == 0 and frames != 0:
         print(f"Processing FPS: {20/(time.time()-fpsTime)}")
         fpsTime = time.time()
@@ -849,11 +722,4 @@ while True:
         break
 
 cams.stop()
-
-# Start the main program logic in a new thread
-# program_thread = threading.Thread(target=main_program)
-# program_thread.daemon = True
-# program_thread.start()
-
-# Start the Tkinter UI main loop
-# root.mainloop()
+cv2.destroyAllWindows()
