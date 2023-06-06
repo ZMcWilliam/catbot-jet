@@ -17,7 +17,7 @@ calibration_map = np.array(calibration_data["calibration_map_w"], dtype=np.float
 
 while True:
     img0 = cams.read_stream(0)
-    img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]-70]
+    img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]]
     img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
 
     img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
