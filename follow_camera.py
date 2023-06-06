@@ -163,6 +163,8 @@ fpsTime = time.time()
 fpsCurrent = 0
 delay = time.time()
 
+hasMovedWindows = False
+
 double_check = 0
 gzDetected = False
 
@@ -661,21 +663,21 @@ while True:
 
 
 
-    cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
-    # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
-    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
+    # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
+    # # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+    # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
-    preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0", preview_image_img0)
+    # preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
+    # cv2.imshow("img0", preview_image_img0)
 
     # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
     # cv2.imshow("img0_binary", preview_image_img0_binary)
 
-    preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0_line", preview_image_img0_line)
+    # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
+    # cv2.imshow("img0_line", preview_image_img0_line)
 
-    preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0_green", preview_image_img0_green)
+    # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
+    # cv2.imshow("img0_green", preview_image_img0_green)
 
     # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
     # cv2.imshow("img0_gray", preview_image_img0_gray)
@@ -695,33 +697,50 @@ while True:
 
     # Show a preview of the image with the contours drawn on it, black as red and white as blue
 
-    preview_image_img0_contours = img0_clean.copy()
-    cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-    cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
-    cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
+    if frames % 1 == 0:
+        preview_image_img0_contours = img0_clean.copy()
+        cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
+        cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
+        cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
+        
+        cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+
+        if isBigTurn:
+            cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+        cv2.putText(preview_image_img0_contours, f"FPS: {fpsCurrent} | {cams.get_fps(0)}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+
+        preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_contours", preview_image_img0_contours)
+
+
+        k = cv2.waitKey(1)
+        if (k & 0xFF == ord('q')):
+            # pr.print_stats(SortKey.TIME)
+            program_active = False
+            break
     
-    cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-
-    if isBigTurn:
-        cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-    cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-
-    preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
-    cv2.imshow("img0_contours", preview_image_img0_contours)
-
-
-    k = cv2.waitKey(1)
-    if (k & 0xFF == ord('q')):
-        # pr.print_stats(SortKey.TIME)
-        program_active = False
-        break
+    if not hasMovedWindows:
+        # cv2.moveWindow("img0", 100, 100)
+        # cv2.moveWindow("img0_binary", 100, 800)
+        # cv2.moveWindow("img0_line", 100, 600)
+        # cv2.moveWindow("img0_green", 600, 600)
+        # cv2.moveWindow("img0_gray", 0, 0)
+        # cv2.moveWindow("img0_hsv", 0, 0)
+        # cv2.moveWindow("img0_gray_scaled", 0, 0)
+        cv2.moveWindow("img0_contours", 600, 100)
+        hasMovedWindows = True
 
     frames += 1
+
+m.stop_all()
 cams.stop()
 cv2.destroyAllWindows()
