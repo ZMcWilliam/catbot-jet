@@ -32,6 +32,7 @@ cams.start_stream(0)
 changed_angle = False
 last_line_pos = np.array([100,100])
 last_ang = 0
+current_steering = 0
 current_linefollowing_state = None
 white_intersection_cooldown = 0
 changed_black_contour = False
@@ -548,12 +549,10 @@ while True:
     sorted_black_contours = FindBestContours(black_contours)
     if (len(sorted_black_contours) == 0):
         print("No black contours found")
-
-        print("STEER TEMP: GO FORWARD")
-        
+        m.run_steer(follower_speed, 100, current_steering)
 
         preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0", preview_image_img0)
+        cv2.imshow("img0 - NBC", preview_image_img0)
         k = cv2.waitKey(1)
         if (k & 0xFF == ord('q')):
             # pr.print_stats(SortKey.TIME)
