@@ -20,8 +20,10 @@ def get_camera(num):
     return cam
 
 class CameraController:
-    def __init__(self):
-        self.cameras = [CameraStream(0)]
+    def __init__(self, processing_conf=None):
+        self.cameras = [
+            CameraStream(0, processing_conf)
+        ]
 
     def stop(self):
         for cam in self.cameras:
@@ -29,6 +31,9 @@ class CameraController:
 
     def read_stream(self, num):
         return self.cameras[num].read_stream()
+    
+    def read_stream_processed(self, num):
+        return self.cameras[num].read_stream_processed()
 
     def start_stream(self, num):
         self.cameras[num].start_stream()
@@ -40,12 +45,27 @@ class CameraController:
         return self.cameras[num].get_fps()
 
 class CameraStream:
-    def __init__(self, num=0):
+    def __init__(self, num=0, processing_conf=None):
         self.num = num
         self.cam = get_camera(self.num)
+        self.processing_conf = processing_conf
 
         self.stream_running = False
+        
         self.frame = None
+
+
+        self.processed = {
+            "raw": None,
+            "resized": None,
+            "gray": None,
+            "gray_scaled": None,
+            "binary": None,
+            "hsv": None,
+            "green": None,
+            "line": None
+        }
+
         self.frames = 0
         self.start_time = 0
         self.stop_time = 0
@@ -66,6 +86,12 @@ class CameraStream:
 
         return self.frame
 
+    def read_stream_processed(self):
+        if not self.stream_running: 
+            raise Exception(f"Camera {self.num} is not active, run .start_stream() first")
+
+        return self.processed
+
     def start_stream(self):
         print(f"[CAMERA] Starting stream for Camera {self.num}")
         self.thread = Thread(target=self.update_stream, args=())
@@ -79,9 +105,42 @@ class CameraStream:
         while self.stream_running:
             self.frames += 1
             self.frame = self.cam.helpers.make_array(self.cam.capture_buffer(), self.cam.camera_configuration()["main"])
-        
+            self.process_frame()
+
         self.cam.stop()
         self.stop_time = time.time()
+
+    def process_frame(self):
+        frame = self.frame
+        if frame is None:
+            raise Exception(f"Camera {self.num} has no frame to process, run .take_image() first")
+        
+        if self.processing_conf is None:
+            raise Exception(f"Camera {self.num} has no conf for processing")
+        self.processed["raw"] = frame.copy()
+
+        self.processed["resized"] = frame[0:frame.shape[0]-38, 0:frame.shape[1]]
+        self.processed["resized"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2RGB)
+
+        # Find the black in the image
+        self.processed["gray"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2GRAY)
+        self.processed["gray"] = cv2.GaussianBlur(self.processed["gray"], (5, 5), 0)
+
+         # Scale white values based on the inverse of the calibration map
+        self.processed["gray_scaled"] = self.processing_conf["calibration_map"] * self.processed["gray"]
+
+        # Get the binary image
+        self.processed["binary"] = (self.processed["gray_scaled"] > self.processing_conf["black_line_threshold"]).astype(np.uint8)
+        self.processed["binary"] = cv2.morphologyEx(self.processed["binary"], cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+
+        # Find green in the image
+        self.processed["hsv"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2HSV)
+        self.processed["green"] = cv2.bitwise_not(cv2.inRange(self.processed["hsv"], self.processing_conf["green_turn_hsv_threshold"][0], self.processing_conf["green_turn_hsv_threshold"][1]))
+        self.processed["green"] = cv2.erode(self.processed["green"], np.ones((5,5),np.uint8), iterations=1)
+
+        # Find the line, by removing the green from the image (since green looks like black when grayscaled)
+        self.processed["line"] = cv2.dilate(self.processed["binary"], np.ones((5,5),np.uint8), iterations=2)
+        self.processed["line"] = cv2.bitwise_and(self.processed["line"], self.processed["green"])
 
     def stop_stream(self):
         print(f"[CAMERA] Stopping stream for Camera {self.num}")

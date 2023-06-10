@@ -25,9 +25,6 @@ servo = {
     "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-83)       # -90=Down, 90=Up
 }
 
-cams = helper_camera.CameraController()
-cams.start_stream(0)
-
 #System variables
 changed_angle = False
 last_line_pos = np.array([100,100])
@@ -50,7 +47,7 @@ angle_weight = 1-error_weight
 # Load the calibration map from the JSON file
 with open("calibration.json", "r") as json_file:
     calibration_data = json.load(json_file)
-calibration_map = np.array(calibration_data["calibration_map_w"])
+calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 
 with open("config.json", "r") as json_file:
     config_data = json.load(json_file)
@@ -74,8 +71,12 @@ max_motor_speed = 100
 
 greenCenter = None
 
-
-# Jank functions
+cams = helper_camera.CameraController({
+    "calibration_map": calibration_map,
+    "black_line_threshold": config_values["black_line_threshold"],
+    "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
+})
+cams.start_stream(0)
 
 # Calculate the distance between a point, and the last line position
 def distToLastLine(point):
@@ -161,7 +162,8 @@ start_time = time.time()
 # last_green_found_time = start_time - 1000
 last_intersection_time = time.time() - 100
 fpsTime = time.time()
-fpsCurrent = 0
+fpsLoop = 0
+fpsCamera = 0
 delay = time.time()
 
 hasMovedWindows = False
@@ -179,46 +181,43 @@ def simplifiedContourPoints(contour, epsilon=0.01):
 smallKernel = np.ones((5,5),np.uint8)
 
 # MAIN LOOP
+program_sleep_time = 0.01 # Initial sleep time
 while True:
+    time.sleep(program_sleep_time)
+    frames += 1
+
     if frames % 20 == 0 and frames != 0:
-        fpsCurrent = int(20/(time.time()-fpsTime))
-        fpsTime = time.time()
-        print(f"Processing FPS: {fpsCurrent} | Camera FPS: {cams.get_fps(0)}")
+        fpsLoop = int(frames/(time.time()-fpsTime))
+        fpsCamera = cams.get_fps(0)
+
+        # Try to balance out the processing time and the camera FPS
+        sleep_adjustment_amt = 0.001
+        sleep_time_cap = 0.02
+        if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_cap:
+            program_sleep_time += sleep_adjustment_amt
+        elif fpsLoop < fpsCamera:
+            program_sleep_time -= sleep_adjustment_amt
+
+        if frames > 500:
+            fpsTime = time.time()
+            frames = 0
+        print(f"Processing FPS: {fpsLoop} | Camera FPS: {cams.get_fps(0)} | Sleep time: {int(program_sleep_time*1000)}")
 
     changed_black_contour = False
-    img0 = cams.read_stream(0)
-    # cv2.imwrite("testImg.jpg", img0)
-    if (img0 is None):
+    frame_processed = cams.read_stream_processed(0)
+    if (frame_processed is None or frame_processed["resized"] is None):
+        print("Waiting for image...")
         continue
-    img0 = img0.copy()
 
-    img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]]
-    img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
-
+    img0 = frame_processed["resized"]
     img0_clean = img0.copy() # Used for displaying the image without any overlays
 
-    # #Find the black in the image
-    img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
-    # img0_gray = cv2.equalizeHist(img0_gray)
-    img0_gray = cv2.GaussianBlur(img0_gray, (5, 5), 0)
-
-    img0_gray_scaled = 255 / np.clip(calibration_map, a_min=1, a_max=None) * img0_gray  # Scale white values based on the inverse of the calibration map
-    img0_gray_scaled = np.clip(img0_gray_scaled, 0, 255)    # Clip the scaled image to ensure values are within the valid range
-    img0_gray_scaled = img0_gray_scaled.astype(np.uint8)    # Convert the scaled image back to uint8 data type
-
-    img0_binary = cv2.threshold(img0_gray_scaled, config_values["black_line_threshold"][0], config_values["black_line_threshold"][1], cv2.THRESH_BINARY)[1]
-    img0_binary = cv2.morphologyEx(img0_binary, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
-
-    img0_hsv = cv2.cvtColor(img0, cv2.COLOR_RGB2HSV)
-
-    #Find the green in the image
-    img0_green = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["green_turn_hsv_threshold"][0], config_values["green_turn_hsv_threshold"][1]))
-    img0_green = cv2.erode(img0_green, np.ones((5,5),np.uint8), iterations=1)
-
-    # #Remove the green from the black (since green looks like black when grayscaled)
-    img0_line = cv2.dilate(img0_binary, np.ones((5,5),np.uint8), iterations=2)
-    img0_line = cv2.bitwise_or(img0_binary, cv2.bitwise_not(img0_green))
-
+    img0_gray = frame_processed["gray"]
+    img0_gray_scaled = frame_processed["gray_scaled"]
+    img0_binary = frame_processed["binary"]
+    img0_green = frame_processed["green"]
+    img0_line = frame_processed["line"]
+    
     # -----------
 
     raw_white_contours, white_hierarchy = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -242,6 +241,7 @@ while True:
         print("No black contours found")
         continue
     
+    continue 
     # -----------
     # GREEN TURNS
     # -----------
@@ -696,47 +696,47 @@ while True:
 
     # Show a preview of the image with the contours drawn on it, black as red and white as blue
 
-    if frames % 1 == 0:
-        preview_image_img0_contours = img0_clean.copy()
-        cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-        cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
-        cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
+    # if frames % 100 == 0:
+    #     preview_image_img0_contours = img0_clean.copy()
+    #     cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
+    #     cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
+    #     cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
         
-        cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-        cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-        cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-        cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-        cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-        cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    #     cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
 
-        if isBigTurn:
-            cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    #     if isBigTurn:
+    #         cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-        cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+    #     cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+    #     cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
-        cv2.putText(preview_image_img0_contours, f"FPS: {fpsCurrent} | {cams.get_fps(0)}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+    #     cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
 
-        preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_contours", preview_image_img0_contours)
+    #     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
+    #     cv2.imshow("img0_contours", preview_image_img0_contours)
 
 
-        k = cv2.waitKey(1)
-        if (k & 0xFF == ord('q')):
-            # pr.print_stats(SortKey.TIME)
-            program_active = False
-            break
+    #     k = cv2.waitKey(1)
+    #     if (k & 0xFF == ord('q')):
+    #         # pr.print_stats(SortKey.TIME)
+    #         program_active = False
+    #         break
     
-    if not hasMovedWindows:
-        # cv2.moveWindow("img0", 100, 100)
-        # cv2.moveWindow("img0_binary", 100, 800)
-        # cv2.moveWindow("img0_line", 100, 600)
-        # cv2.moveWindow("img0_green", 600, 600)
-        # cv2.moveWindow("img0_gray", 0, 0)
-        # cv2.moveWindow("img0_hsv", 0, 0)
-        # cv2.moveWindow("img0_gray_scaled", 0, 0)
-        cv2.moveWindow("img0_contours", 600, 100)
-        hasMovedWindows = True
+    # if not hasMovedWindows:
+    #     # cv2.moveWindow("img0", 100, 100)
+    #     # cv2.moveWindow("img0_binary", 100, 800)
+    #     # cv2.moveWindow("img0_line", 100, 600)
+    #     # cv2.moveWindow("img0_green", 600, 600)
+    #     # cv2.moveWindow("img0_gray", 0, 0)
+    #     # cv2.moveWindow("img0_hsv", 0, 0)
+    #     # cv2.moveWindow("img0_gray_scaled", 0, 0)
+    #     cv2.moveWindow("img0_contours", 600, 100)
+    #     hasMovedWindows = True
 
     frames += 1
 
