@@ -50,6 +50,9 @@ class CameraStream:
         self.cam = get_camera(self.num)
         self.processing_conf = processing_conf
 
+        if self.processing_conf is None:
+            print("Warning: No processing configuration provided, images will not be pre-processed")
+
         self.stream_running = False
         
         self.frame = None
@@ -105,7 +108,9 @@ class CameraStream:
         while self.stream_running:
             self.frames += 1
             self.frame = self.cam.helpers.make_array(self.cam.capture_buffer(), self.cam.camera_configuration()["main"])
-            self.process_frame()
+
+            if self.processing_conf is not None:
+                self.process_frame()
 
         self.cam.stop()
         self.stop_time = time.time()
@@ -117,30 +122,34 @@ class CameraStream:
         
         if self.processing_conf is None:
             raise Exception(f"Camera {self.num} has no conf for processing")
-        self.processed["raw"] = frame.copy()
+        new_data = {}
+        new_data["raw"] = frame.copy()
 
-        self.processed["resized"] = frame[0:frame.shape[0]-38, 0:frame.shape[1]]
-        self.processed["resized"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2RGB)
+        new_data["resized"] = frame[0:frame.shape[0]-38, 0:frame.shape[1]]
+        new_data["resized"] = cv2.cvtColor(new_data["resized"], cv2.COLOR_BGR2RGB)
 
         # Find the black in the image
-        self.processed["gray"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2GRAY)
-        self.processed["gray"] = cv2.GaussianBlur(self.processed["gray"], (5, 5), 0)
+        new_data["gray"] = cv2.cvtColor(new_data["resized"], cv2.COLOR_BGR2GRAY)
+        new_data["gray"] = cv2.GaussianBlur(new_data["gray"], (5, 5), 0)
 
          # Scale white values based on the inverse of the calibration map
-        self.processed["gray_scaled"] = self.processing_conf["calibration_map"] * self.processed["gray"]
+        new_data["gray_scaled"] = self.processing_conf["calibration_map"] * new_data["gray"]
 
         # Get the binary image
-        self.processed["binary"] = (self.processed["gray_scaled"] > self.processing_conf["black_line_threshold"]).astype(np.uint8)
-        self.processed["binary"] = cv2.morphologyEx(self.processed["binary"], cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+        new_data["binary"] = (new_data["gray_scaled"] > self.processing_conf["black_line_threshold"]).astype(np.uint8)
+        new_data["binary"] = cv2.morphologyEx(new_data["binary"], cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
 
         # Find green in the image
-        self.processed["hsv"] = cv2.cvtColor(self.processed["resized"], cv2.COLOR_BGR2HSV)
-        self.processed["green"] = cv2.bitwise_not(cv2.inRange(self.processed["hsv"], self.processing_conf["green_turn_hsv_threshold"][0], self.processing_conf["green_turn_hsv_threshold"][1]))
-        self.processed["green"] = cv2.erode(self.processed["green"], np.ones((5,5),np.uint8), iterations=1)
+        new_data["hsv"] = cv2.cvtColor(new_data["resized"], cv2.COLOR_BGR2HSV)
+        new_data["green"] = cv2.bitwise_not(cv2.inRange(new_data["hsv"], self.processing_conf["green_turn_hsv_threshold"][0], self.processing_conf["green_turn_hsv_threshold"][1]))
+        new_data["green"] = cv2.erode(new_data["green"], np.ones((5,5),np.uint8), iterations=1)
 
         # Find the line, by removing the green from the image (since green looks like black when grayscaled)
-        self.processed["line"] = cv2.dilate(self.processed["binary"], np.ones((5,5),np.uint8), iterations=2)
-        self.processed["line"] = cv2.bitwise_and(self.processed["line"], self.processed["green"])
+        new_data["line"] = cv2.dilate(new_data["binary"], np.ones((5,5),np.uint8), iterations=2)
+        new_data["line"] = cv2.bitwise_and(new_data["line"], new_data["green"])
+
+        # Only set the processed data once it is all populated, to avoid partial data being read
+        self.processed = new_data
 
     def stop_stream(self):
         print(f"[CAMERA] Stopping stream for Camera {self.num}")

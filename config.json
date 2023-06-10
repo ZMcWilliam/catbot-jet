@@ -3,5 +3,13 @@
     "green_turn_hsv_threshold": [
         [30, 30, 60],
         [75, 210, 210]
-    ]
+    ],
+    "rescue_circle_conf": {
+        "dp": 1,
+        "minDist": 52,
+        "param1": 20,
+        "param2": 34,
+        "minRadius": 4,
+        "maxRadius": 92
+    }
 }
