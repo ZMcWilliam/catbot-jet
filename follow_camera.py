@@ -192,10 +192,11 @@ while True:
 
         # Try to balance out the processing time and the camera FPS
         sleep_adjustment_amt = 0.001
-        sleep_time_cap = 0.02
-        if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_cap:
+        sleep_time_max = 0.02
+        sleep_time_min = 0.005
+        if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_max:
             program_sleep_time += sleep_adjustment_amt
-        elif fpsLoop < fpsCamera:
+        elif fpsLoop < fpsCamera and program_sleep_time > sleep_time_min:
             program_sleep_time -= sleep_adjustment_amt
 
         if frames > 500:
@@ -241,7 +242,6 @@ while True:
         print("No black contours found")
         continue
     
-    continue 
     # -----------
     # GREEN TURNS
     # -----------
@@ -263,7 +263,6 @@ while True:
     else:
         greenCenter = None # Reset greenturn memory if no green found!
 
-
     # -----------
     # INTERSECTIONS
     # -----------
@@ -273,7 +272,7 @@ while True:
         # Filter white contours to have a minimum area before we accept them 
         white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
 
-        if len(white_contours_filtered) == 2:
+        if len(white_contours_filtered) == 2 and False:
             # Sort contours based on x position
             contour_L = white_contours_filtered[0]
             contour_R = white_contours_filtered[1]
@@ -541,6 +540,10 @@ while True:
 
         changed_black_contour = False
 
+        # if current_linefollowing_state is not None and "2-ng" in current_linefollowing_state:
+        #     print("Resetting linefollowing state")
+        #     current_linefollowing_state = None
+
     # -----------
     # REST OF LINE LINE FOLLOWER
     # -----------
@@ -737,8 +740,6 @@ while True:
     #     # cv2.moveWindow("img0_gray_scaled", 0, 0)
     #     cv2.moveWindow("img0_contours", 600, 100)
     #     hasMovedWindows = True
-
-    frames += 1
 
 m.stop_all()
 cams.stop()
