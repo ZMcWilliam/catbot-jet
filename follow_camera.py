@@ -8,7 +8,7 @@ import helper_intersections
 import numpy as np
 import threading
 from gpiozero import AngularServo
-from typing import List, Tuple
+from typing import List, Optional, Tuple, Dict, Union
 
 # Type aliases
 Contour = List[List[Tuple[int, int]]]
@@ -24,6 +24,8 @@ servo = {
     "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-80),   # -90=Up, 40=Down
     "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-83)       # -90=Down, 90=Up
 }
+
+preview_enabled=True
 
 #System variables
 changed_angle = False
@@ -166,8 +168,6 @@ fpsLoop = 0
 fpsCamera = 0
 delay = time.time()
 
-hasMovedWindows = False
-
 double_check = 0
 gzDetected = False
 
@@ -180,11 +180,129 @@ def simplifiedContourPoints(contour, epsilon=0.01):
 
 smallKernel = np.ones((5,5),np.uint8)
 
+class CV2ThreadedPreviewer:
+    """
+    A class that provides functionality to display OpenCV preview windows in a separate thread.
+
+    Args:
+        scaleX (Optional[int]): The horizontal scale factor for the preview windows. Defaults to None.
+        scaleY (Optional[int]): The vertical scale factor for the preview windows. Defaults to None.
+
+    Attributes:
+        windows (Dict[str, Optional[np.ndarray]]): A dictionary to store window names and corresponding images.
+        active (bool): A flag indicating whether the preview windows are active or not.
+        scaleX (Optional[int]): The horizontal scale factor for the preview windows. Defaults to None.
+        scaleY (Optional[int]): The vertical scale factor for the preview windows. Defaults to None.
+    """
+
+    def __init__(self, scaleX: Optional[int] = None, scaleY: Optional[int] = None):
+        self.windows: Dict[str, Dict[str, Union[Optional[Tuple[int, int]], Optional[np.ndarray], bool]]] = {}
+        self.active: bool = True
+        self.scaleX: Optional[int] = scaleX
+        self.scaleY: Optional[int] = scaleY
+
+    def addWindow(self, name: str, x: Optional[int] = None, y: Optional[int] = None) -> None:
+        """
+        Creates a named preview window at the specified (x, y) position.
+
+        Args:
+            name (str): The name of the window.
+            x (Optional[int]): The x-coordinate of the window's top-left corner. Defaults to None.
+            y (Optional[int]): The y-coordinate of the window's top-left corner. Defaults to None.
+        """
+        self.windows[name] = {
+            'position': (x, y),
+            'image': None,
+            'moved': False,
+            'image_shown': False,
+            'window_created': False,
+        }
+
+    def setImage(self, name: str, img: Optional[np.ndarray]) -> None:
+        """
+        Sets the image for a specific window.
+
+        Args:
+            name (str): The name of the window.
+            img (Optional[ndarray]): The image to be set. If None, the window will be skipped during iteration.
+        """
+        if name in self.windows:
+            if not self.windows[name]["window_created"]:
+                cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+                self.windows["window_created"] = True
+            self.windows[name]["image"] = img
+            self.windows[name]["image_shown"] = False
+
+    def isActive(self) -> bool:
+        """
+        Returns the current state of the preview windows.
+
+        Returns:
+            bool: True if the preview windows are active, False otherwise.
+        """
+        return self.active
+
+    def _run(self) -> None:
+        """
+        Internal method that runs the preview thread.
+        """
+        while self.active:
+            images_to_show = [(name, window) for name, window in self.windows.items() if window["image_shown"] is False and window["image"] is not None]
+
+            if len(images_to_show) == 0:
+                time.sleep(0.01)
+                continue
+        
+            for name, window in images_to_show:
+                img = window["image"]
+                if self.scaleX is not None and self.scaleY is not None:
+                    img = cv2.resize(img, (0,0), fx=self.scaleX, fy=self.scaleY)
+                
+                print(name, window["position"])
+                cv2.imshow(name, img)
+                window["image_shown"] = False
+
+                if not window["moved"] and not window["position"] is None:
+                    x, y = window["position"]
+                    cv2.moveWindow(name, x, y)
+                    window["moved"] = True
+
+            k = cv2.waitKey(1)
+            if k & 0xFF == ord('q'):
+                self.active = False
+                break
+
+        cv2.destroyAllWindows()
+
+    def start(self) -> None:
+        """
+        Starts the preview thread.
+        """
+        thread = threading.Thread(target=self._run)
+        thread.start()
+
+cvPreview = CV2ThreadedPreviewer(0.8, 0.7)
+
+if preview_enabled:
+    cvPreview.addWindow("img0", 100, 100)
+    cvPreview.addWindow("img0_binary", 100, 800)
+    cvPreview.addWindow("img0_line", 100, 600)
+    cvPreview.addWindow("img0_green", 600, 600)
+    cvPreview.addWindow("img0_contours", 600, 100)
+    cvPreview.addWindow("img0_gray")
+    cvPreview.addWindow("img0_hsv")
+    cvPreview.addWindow("img0_gray_scaled")
+    cvPreview.start()
+
 # MAIN LOOP
 program_sleep_time = 0.01 # Initial sleep time
 while True:
     time.sleep(program_sleep_time)
     frames += 1
+
+    if not cvPreview.isActive():
+        print("Preview window closed, exiting...")
+        break
 
     if frames % 20 == 0 and frames != 0:
         fpsLoop = int(frames/(time.time()-fpsTime))
@@ -665,81 +783,38 @@ while True:
 
 
 
-    # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
-    # # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
-    # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
+    cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
+    # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+    cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
-    # preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0", preview_image_img0)
+    cvPreview.setImage("img0", img0)
+    cvPreview.setImage("img0_binary", img0_binary)
+    cvPreview.setImage("img0_line", img0_line)
+    cvPreview.setImage("img0_green", img0_green)
+    cvPreview.setImage("img0_gray", img0_gray)
+    cvPreview.setImage("img0_gray_scaled", img0_gray_scaled)
 
-    # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_binary", preview_image_img0_binary)
-
-    # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_line", preview_image_img0_line)
-
-    # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_green", preview_image_img0_green)
-
-    # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_gray", preview_image_img0_gray)
-
-    # def mouseCallbackHSV(event, x, y, flags, param):
-    #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
-    #         # Print HSV value only when the left mouse button is pressed and mouse is moving
-    #         hsv_value = img0_hsv[y, x]
-    #         print(f"HSV: {hsv_value}")
-    # # Show HSV preview with text on hover to show HSV values
-    # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_hsv", preview_image_img0_hsv)
-    # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
-
-    # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
-
-    # Show a preview of the image with the contours drawn on it, black as red and white as blue
-
-    # if frames % 100 == 0:
-    #     preview_image_img0_contours = img0_clean.copy()
-    #     cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-    #     cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
-    #     cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
-        
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-
-    #     if isBigTurn:
-    #         cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-
-    #     cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-    #     cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-
-    #     cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
-
-    #     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
-    #     cv2.imshow("img0_contours", preview_image_img0_contours)
-
-
-    #     k = cv2.waitKey(1)
-    #     if (k & 0xFF == ord('q')):
-    #         # pr.print_stats(SortKey.TIME)
-    #         program_active = False
-    #         break
+    preview_image_img0_contours = img0_clean.copy()
+    cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
+    cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
+    cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
     
-    # if not hasMovedWindows:
-    #     # cv2.moveWindow("img0", 100, 100)
-    #     # cv2.moveWindow("img0_binary", 100, 800)
-    #     # cv2.moveWindow("img0_line", 100, 600)
-    #     # cv2.moveWindow("img0_green", 600, 600)
-    #     # cv2.moveWindow("img0_gray", 0, 0)
-    #     # cv2.moveWindow("img0_hsv", 0, 0)
-    #     # cv2.moveWindow("img0_gray_scaled", 0, 0)
-    #     cv2.moveWindow("img0_contours", 600, 100)
-    #     hasMovedWindows = True
+    cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+    cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+
+    if isBigTurn:
+        cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+    cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+    cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+    cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+
+    cvPreview.setImage("img0_contours", preview_image_img0_contours)
 
 m.stop_all()
 cams.stop()
