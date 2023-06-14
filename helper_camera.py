@@ -146,7 +146,7 @@ class CameraStream:
 
         # Find the line, by removing the green from the image (since green looks like black when grayscaled)
         new_data["line"] = cv2.dilate(new_data["binary"], np.ones((5,5),np.uint8), iterations=2)
-        new_data["line"] = cv2.bitwise_not(cv2.bitwise_and(~new_data["line"], new_data["green"]))
+        new_data["line"] = cv2.bitwise_or(new_data["binary"], cv2.bitwise_not(new_data["green"]))
 
         # Only set the processed data once it is all populated, to avoid partial data being read
         self.processed = new_data
