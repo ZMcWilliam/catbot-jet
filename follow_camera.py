@@ -272,6 +272,82 @@ while True:
         # Filter white contours to have a minimum area before we accept them 
         white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
 
+        if len(white_contours_filtered) == 2:
+            contour_L = white_contours_filtered[0]
+            contour_R = white_contours_filtered[1]
+
+            if centerOfContour(contour_L) > centerOfContour(contour_R):
+                contour_L = white_contours_filtered[1]
+                contour_R = white_contours_filtered[0]
+
+            # Simplify contours to get key points
+            contour_L_simple = simplifiedContourPoints(contour_L, 0.03)
+            contour_R_simple = simplifiedContourPoints(contour_R, 0.03)
+
+            if len(contour_L_simple) < 2 or len(contour_R_simple) < 2:
+                print("2WC NOT ENOUGH POINTS?")
+                continue
+
+            for point in contour_L_simple:
+                cv2.circle(img0, (point[0], point[1]), 15, (0,125,255), -1)
+
+            for point in contour_R_simple:
+                cv2.circle(img0, (point[0], point[1]), 15, (0,255,125), -1)
+
+            contour_L_vert_sort = sorted(contour_L_simple, key=lambda point: point[1])
+            contour_R_vert_sort = sorted(contour_R_simple, key=lambda point: point[1])
+
+            if current_linefollowing_state is None or "2-top-ng" in current_linefollowing_state:
+                contour_L_2_top = contour_L_vert_sort[:2]
+                contour_R_2_top = contour_R_vert_sort[:2]
+                
+                combined_top_points = contour_L_2_top + contour_R_2_top
+                top_dists = [p[1] for p in combined_top_points]
+
+                # If all points are near the top, then we should check if we are at an intersection
+                if sum([d < 80 for d in top_dists]) == 4:
+                    # If none of the following are true, then make the top of the image white, anywhere above the lowest point
+                    #   - All points at the top
+                    #   - Left top points are at the top, right top points are close to the top
+                    #   - Right top points are at the top, left top points are close to the top
+                    if (
+                        not sum([d < 3 for d in top_dists]) == 4
+                        and not (sum([d < 3 for d in top_dists[:2]]) == 2 and sum([12 < d and d < 80 for d in top_dists[2:]]) == 2)
+                        and not (sum([d < 3 for d in top_dists[2:]]) == 2 and sum([12 < d and d < 80 for d in top_dists[:2]]) == 2)
+                    ):
+                        current_linefollowing_state = "2-top-ng"
+                        lowest_point = sorted(combined_top_points, key=lambda point: point[1])[-1]
+
+                        img0_line_new[:lowest_point[1] + 3, :] = 255
+                        changed_black_contour = cv2.bitwise_not(img0_line_new)
+                    else:
+                        current_linefollowing_state = None
+                else:
+                    current_linefollowing_state = None
+            else: # We are exiting an intersection
+                contour_L_2_bottom = contour_L_vert_sort[2:]
+                contour_R_2_bottom = contour_R_vert_sort[2:]
+                
+                combined_bottom_points = contour_L_2_bottom + contour_R_2_bottom
+                bottom_dists = [img0.shape[0] - p[1] for p in combined_bottom_points]
+
+                # If all points are at the bottom, we probably exited the intersection
+                if sum([d < 3 for d in bottom_dists]) == 4:
+                    current_linefollowing_state = None
+                    print("Exited intersection")
+                # If all points are still near the bottom, since we already know we are existing an intersection, remove the bottom to prevent the robot from turning
+                elif sum([d < 120 for d in bottom_dists]) == 4:
+                    current_linefollowing_state = "2-bottom-ng"
+                    highest_point = sorted(combined_bottom_points, key=lambda point: point[1])[0]
+                    
+                    img0_line_new[highest_point[1] - 3:, :] = 255
+                    changed_black_contour = cv2.bitwise_not(img0_line_new)
+                # If we are not at the bottom, then we are probably still in the intersection... we shouldn't really end up here, so just reset the state
+                else:
+                    current_linefollowing_state = None
+                    print("Exited intersection - but not really?")
+                    
+
         if len(white_contours_filtered) == 2 and False:
             # Sort contours based on x position
             contour_L = white_contours_filtered[0]
@@ -289,12 +365,16 @@ while True:
             left_cutter_points = sorted(sorted(contour_R_simple, key=lambda point: point[0])[:2], key=lambda point: point[1])
             right_cutter_points = sorted(sorted(contour_L_simple, key=lambda point: -point[0])[:2], key=lambda point: point[1])
             
+            skip_next_check = False
             if current_linefollowing_state is None:
                 # Only one of the cutter points is at the top of the screen
                 # This means we have just started seeing a line coming off to the side
                 if (
                     (left_cutter_points[0][1] > 3 and right_cutter_points[0][1] < 3 or left_cutter_points[0][1] < 3 and right_cutter_points[0][1] > 3)
                     and not ((centerOfLine(left_cutter_points)[0] < centerOfLine(right_cutter_points)[0]))
+                    # and the left_cutter_points are not touching the left side of the screen, same with the right
+                    and not (left_cutter_points[0][0] < 3 and left_cutter_points[1][0] < 3)
+                    and not (right_cutter_points[0][0] > img0_line.shape[1]-3 and right_cutter_points[1][0] > img0_line.shape[1]-3)
                 ):
                     if (white_intersection_cooldown == 0):
                         white_intersection_cooldown = time.time()
@@ -304,19 +384,21 @@ while True:
                         current_linefollowing_state = "2-ng-a"
                         changed_black_contour = img0_line_new
                         intersection_state_debug = ["2-ng-a", time.time()]
+                        skip_next_check = True
                     else:
                         current_linefollowing_state = None
                         intersection_state_debug = ["2-ng-b", time.time()]
                 # Both cutter points are not at the top of the screen
                 elif (left_cutter_points[0][1] > 3 and right_cutter_points[0][1] > 3):
-                    img0_line_new = helper_intersections.CutMaskWithLine(left_cutter_points[1], left_cutter_points[0], img0_line_new, "right")
-                    img0_line_new = cv2.bitwise_not(helper_intersections.CutMaskWithLine(right_cutter_points[0], right_cutter_points[1], img0_line_new, "left"))
-                    # img0_line_new = cv2.bitwise_not(img0_line_new)
-                    changed_black_contour = img0_line_new
+                    # img0_line_new = helper_intersections.CutMaskWithLine(left_cutter_points[1], left_cutter_points[0], img0_line_new, "right")
+                    # img0_line_new = cv2.bitwise_not(helper_intersections.CutMaskWithLine(right_cutter_points[0], right_cutter_points[1], img0_line_new, "left"))
+                    # # img0_line_new = cv2.bitwise_not(img0_line_new)
+                    # changed_black_contour = img0_line_new
                     current_linefollowing_state = "2-ng-c"
                     white_intersection_cooldown = 0
                     intersection_state_debug = ["2-ng-c", time.time()]
-            else:
+            
+            if current_linefollowing_state is not None and not skip_next_check:
                 # If none of the cutter points are at the bottom of the screen, and current_linefollowing_state has an "-ex" in it (exiting something), or we were just in a 3/4-way intersection
                 # then we gotta keep cutting that line until we are fully out
                 if (left_cutter_points[1][1] < img0_binary.shape[0]-3 or right_cutter_points[1][1] < img0_binary.shape[0]-3 
@@ -336,7 +418,11 @@ while True:
                     current_linefollowing_state = None
                     intersection_state_debug = ["2-ng-e", time.time()]
                 # The average centre point of the left cutter points is to the left of the average centre point of the right cutter points, so we are doing a turn
-                elif (centerOfLine(left_cutter_points)[0] < centerOfLine(right_cutter_points)[0]):
+                elif (
+                    centerOfLine(left_cutter_points)[0] < centerOfLine(right_cutter_points)[0]
+                    or (left_cutter_points[0][0] < 3 and left_cutter_points[1][0] < 3)
+                    or (right_cutter_points[0][0] > img0_line.shape[1]-3 and right_cutter_points[1][0] > img0_line.shape[1]-3)
+                ):
                     white_intersection_cooldown = 0
                     current_linefollowing_state = None
                     intersection_state_debug = ["2-ng-f", time.time()]
@@ -345,7 +431,12 @@ while True:
                     intersection_state_debug = ["2-ng-g", time.time()]
                     img0_line_new = helper_intersections.CutMaskWithLine(left_cutter_points[1], left_cutter_points[0], img0_line_new, "right")
                     img0_line_new = cv2.bitwise_not(helper_intersections.CutMaskWithLine(right_cutter_points[0], right_cutter_points[1], img0_line_new, "left"))
-                    changed_black_contour = img0_line_new
+                    new_black_contour, new_black_heirarchy = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                    # If the area of the black contour is any less than 10% of the original contour, let's skip changing it
+
+                    # print(cv2.contourArea(new_black_contour[0]), cv2.contourArea(black_contours[0]), cv2.contourArea(black_contours[0]) * 0.1)
+                    if (new_black_contour and cv2.contourArea(new_black_contour[0]) > cv2.contourArea(black_contours[0]) * 0.1):
+                        changed_black_contour = img0_line_new
 
         if (len(white_contours_filtered) == 3):
             # We are entering a 3-way intersection
