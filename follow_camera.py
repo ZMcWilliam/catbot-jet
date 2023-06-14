@@ -209,15 +209,18 @@ while True:
     if (frame_processed is None or frame_processed["resized"] is None):
         print("Waiting for image...")
         continue
+    
+    # We need to .copy() the images because we are going to be modifying them
+    # This prevents us from reading a modified image on the next loop, and things breaking
 
-    img0 = frame_processed["resized"]
+    img0 = frame_processed["resized"].copy()
     img0_clean = img0.copy() # Used for displaying the image without any overlays
 
-    img0_gray = frame_processed["gray"]
-    img0_gray_scaled = frame_processed["gray_scaled"]
-    img0_binary = frame_processed["binary"]
-    img0_green = frame_processed["green"]
-    img0_line = frame_processed["line"]
+    img0_gray = frame_processed["gray"].copy()
+    img0_gray_scaled = frame_processed["gray_scaled"].copy()
+    img0_binary = frame_processed["binary"].copy()
+    img0_green = frame_processed["green"].copy()
+    img0_line = frame_processed["line"].copy()
     
     # -----------
 
