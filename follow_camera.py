@@ -311,12 +311,12 @@ while True:
                 if sum([d < 80 for d in top_dists]) == 4:
                     # If none of the following are true, then make the top of the image white, anywhere above the lowest point
                     #   - All points at the top
-                    #   - Left top points are at the top, right top points are close to the top
-                    #   - Right top points are at the top, left top points are close to the top
+                    #   - Left top points are at the top, right top points are close to the top (disabled for now, as it breaks entry to 3WC)
+                    #   - Right top points are at the top, left top points are close to the top (disabled for now, as it breaks entry to 3WC)
                     if (
                         not sum([d < 3 for d in top_dists]) == 4
-                        and not (sum([d < 3 for d in top_dists[:2]]) == 2 and sum([12 < d and d < 80 for d in top_dists[2:]]) == 2)
-                        and not (sum([d < 3 for d in top_dists[2:]]) == 2 and sum([12 < d and d < 80 for d in top_dists[:2]]) == 2)
+                        # and not (sum([d < 3 for d in top_dists[:2]]) == 2 and sum([12 < d and d < 80 for d in top_dists[2:]]) == 2)
+                        # and not (sum([d < 3 for d in top_dists[2:]]) == 2 and sum([12 < d and d < 80 for d in top_dists[:2]]) == 2)
                     ):
                         current_linefollowing_state = "2-top-ng"
                         lowest_point = sorted(combined_top_points, key=lambda point: point[1])[-1]
