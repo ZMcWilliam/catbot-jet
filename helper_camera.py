@@ -136,7 +136,7 @@ class CameraStream:
         new_data["gray_scaled"] = self.processing_conf["calibration_map"] * new_data["gray"]
 
         # Get the binary image
-        new_data["binary"] = (new_data["gray_scaled"] > self.processing_conf["black_line_threshold"]).astype(np.uint8)
+        new_data["binary"] = ((new_data["gray_scaled"] > self.processing_conf["black_line_threshold"]) * 255).astype(np.uint8)
         new_data["binary"] = cv2.morphologyEx(new_data["binary"], cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
 
         # Find green in the image
@@ -146,7 +146,7 @@ class CameraStream:
 
         # Find the line, by removing the green from the image (since green looks like black when grayscaled)
         new_data["line"] = cv2.dilate(new_data["binary"], np.ones((5,5),np.uint8), iterations=2)
-        new_data["line"] = cv2.bitwise_and(new_data["line"], new_data["green"])
+        new_data["line"] = cv2.bitwise_not(cv2.bitwise_and(~new_data["line"], new_data["green"]))
 
         # Only set the processed data once it is all populated, to avoid partial data being read
         self.processed = new_data

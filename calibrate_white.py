@@ -72,7 +72,7 @@ while True:
 
     # Save the calibration map to the JSON file
     with open("calibration.json", "w") as json_file:
-        json.dump(calibration_data, json_file, indent=4)
+        json.dump(calibration_data, json_file)
 
     print("Calibration images captured, updated calibration.json")
     

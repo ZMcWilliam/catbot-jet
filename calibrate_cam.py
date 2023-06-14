@@ -244,7 +244,7 @@ def main_program():
         print(config_values["black_line_threshold"])
         img0_gray_scaled = calibration_map * img0_gray
 
-        img0_binary = (img0_gray_scaled > config_values["black_line_threshold"]).astype(np.uint8)
+        img0_binary = ((img0_gray_scaled > config_values["black_line_threshold"]) * 255).astype(np.uint8)
         img0_binary = cv2.morphologyEx(img0_binary, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
 
         img0_hsv = cv2.cvtColor(img0, cv2.COLOR_RGB2HSV)
