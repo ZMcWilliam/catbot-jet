@@ -277,14 +277,17 @@ def main_program():
         preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0", preview_image_img0)
 
-        # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-        # cv2.imshow("img0_binary", preview_image_img0_binary)
+        preview_image_img0_blurred = cv2.resize(blurred, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_blurred", preview_image_img0_blurred)
 
-        # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-        # cv2.imshow("img0_line", preview_image_img0_line)
+        preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_binary", preview_image_img0_binary)
 
-        # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-        # cv2.imshow("img0_green", preview_image_img0_green)
+        preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_line", preview_image_img0_line)
+
+        preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_green", preview_image_img0_green)
 
         preview_image_img0_circles = cv2.resize(img0_circles, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_circles", preview_image_img0_circles)
@@ -299,8 +302,8 @@ def main_program():
         # cv2.imshow("img0_hsv", preview_image_img0_hsv)
         # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
 
-        # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
-        # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
+        preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
 
         k = cv2.waitKey(1)
         if (k & 0xFF == ord('q')):
