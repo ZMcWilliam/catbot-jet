@@ -41,7 +41,7 @@ while True:
         img = cams.read_stream(0)
         if img is None:
             continue
-        img = img[0:img.shape[0]-38, 0:img.shape[1]]
+        img = img[0:429, 0:img.shape[1]]
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)

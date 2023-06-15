@@ -123,7 +123,7 @@ class CameraStream:
         if self.processing_conf is None:
             raise Exception(f"Camera {self.num} has no conf for processing")
 
-        resized = frame[0:frame.shape[0]-38, 0:frame.shape[1]]
+        resized = frame[0:429, 0:frame.shape[1]]
         resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
         # Find the black in the image
