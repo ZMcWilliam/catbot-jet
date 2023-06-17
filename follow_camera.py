@@ -1,4 +1,5 @@
 import time
+import gpiozero
 import cv2
 import json
 import math
@@ -13,6 +14,8 @@ from typing import List, Tuple
 # Type aliases
 Contour = List[List[Tuple[int, int]]]
 
+PORT_DEBUG_SWITCH = 21
+
 PORT_SERVO_GATE = 12
 PORT_SERVO_CLAW = 13
 PORT_SERVO_LIFT = 18
@@ -24,6 +27,8 @@ servo = {
     "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-80),   # -90=Up, 40=Down
     "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-83)       # -90=Down, 90=Up
 }
+
+debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
 
 #System variables
 changed_angle = False
@@ -186,7 +191,7 @@ while True:
     time.sleep(program_sleep_time)
     frames += 1
 
-    if frames % 20 == 0 and frames != 0:
+    if frames % 5 == 0 and frames != 0:
         fpsLoop = int(frames/(time.time()-fpsTime))
         fpsCamera = cams.get_fps(0)
 
@@ -290,12 +295,6 @@ while True:
             if len(contour_L_simple) < 2 or len(contour_R_simple) < 2:
                 print("2WC NOT ENOUGH POINTS?")
                 continue
-
-            for point in contour_L_simple:
-                cv2.circle(img0, (point[0], point[1]), 15, (0,125,255), -1)
-
-            for point in contour_R_simple:
-                cv2.circle(img0, (point[0], point[1]), 15, (0,255,125), -1)
 
             contour_L_vert_sort = sorted(contour_L_simple, key=lambda point: point[1])
             contour_R_vert_sort = sorted(contour_R_simple, key=lambda point: point[1])
@@ -662,87 +661,89 @@ while True:
     
     if time.time()-delay > 2:
         motor_vals = m.run_steer(follower_speed, 100, current_steering)
-        print(f"Steering: {int(current_steering)} \t{str(motor_vals)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}")
     elif time.time()-delay <= 4:
         print(f"DELAY {4-time.time()+delay}")
 
+    if debug_switch.value:
+        # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
+        # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
+        # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
+        preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0", preview_image_img0)
 
-    # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
-    # # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
-    # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
-
-    # preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0", preview_image_img0)
-
-    # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_binary", preview_image_img0_binary)
-
-    # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_line", preview_image_img0_line)
-
-    # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_green", preview_image_img0_green)
-
-    # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_gray", preview_image_img0_gray)
-
-    # def mouseCallbackHSV(event, x, y, flags, param):
-    #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
-    #         # Print HSV value only when the left mouse button is pressed and mouse is moving
-    #         hsv_value = img0_hsv[y, x]
-    #         print(f"HSV: {hsv_value}")
-    # # Show HSV preview with text on hover to show HSV values
-    # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_hsv", preview_image_img0_hsv)
-    # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
-
-    # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
-    # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
-
-    # Show a preview of the image with the contours drawn on it, black as red and white as blue
-
-    # if frames % 100 == 0:
-    #     preview_image_img0_contours = img0_clean.copy()
-    #     cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-    #     cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
-    #     cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
+        preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_clean", preview_image_img0_clean)
         
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-    #     cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_binary", preview_image_img0_binary)
 
-    #     if isBigTurn:
-    #         cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_line", preview_image_img0_line)
 
-    #     cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-    #     cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_green", preview_image_img0_green)
 
-    #     cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+        preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_gray", preview_image_img0_gray)
 
-    #     preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
-    #     cv2.imshow("img0_contours", preview_image_img0_contours)
+        # def mouseCallbackHSV(event, x, y, flags, param):
+        #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
+        #         # Print HSV value only when the left mouse button is pressed and mouse is moving
+        #         hsv_value = img0_hsv[y, x]
+        #         print(f"HSV: {hsv_value}")
+        # # Show HSV preview with text on hover to show HSV values
+        # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_hsv", preview_image_img0_hsv)
+        # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
+
+        # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
+
+        # Show a preview of the image with the contours drawn on it, black as red and white as blue
+
+        # if frames % 5 == 0:
+        preview_image_img0_contours = img0_clean.copy()
+        cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
+        cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
+        cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
+        
+        cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+
+        if isBigTurn:
+            cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+        cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+
+        cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+
+        preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_contours", preview_image_img0_contours)
 
 
-    #     k = cv2.waitKey(1)
-    #     if (k & 0xFF == ord('q')):
-    #         # pr.print_stats(SortKey.TIME)
-    #         program_active = False
-    #         break
-    
-    # if not hasMovedWindows:
-    #     # cv2.moveWindow("img0", 100, 100)
-    #     # cv2.moveWindow("img0_binary", 100, 800)
-    #     # cv2.moveWindow("img0_line", 100, 600)
-    #     # cv2.moveWindow("img0_green", 600, 600)
-    #     # cv2.moveWindow("img0_gray", 0, 0)
-    #     # cv2.moveWindow("img0_hsv", 0, 0)
-    #     # cv2.moveWindow("img0_gray_scaled", 0, 0)
-    #     cv2.moveWindow("img0_contours", 600, 100)
-    #     hasMovedWindows = True
+        k = cv2.waitKey(1)
+        if (k & 0xFF == ord('q')):
+            # pr.print_stats(SortKey.TIME)
+            program_active = False
+            break
+
+        if not hasMovedWindows:
+            cv2.moveWindow("img0", 100, 100)
+            # cv2.moveWindow("img0_binary", 100, 800)
+            # cv2.moveWindow("img0_line", 100, 600)
+            # cv2.moveWindow("img0_green", 600, 600)
+            # cv2.moveWindow("img0_gray", 0, 0)
+            # cv2.moveWindow("img0_hsv", 0, 0)
+            # cv2.moveWindow("img0_gray_scaled", 0, 0)
+            cv2.moveWindow("img0_contours", 700, 100)
+            hasMovedWindows = True
 
 m.stop_all()
 cams.stop()
