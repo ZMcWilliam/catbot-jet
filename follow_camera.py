@@ -263,7 +263,40 @@ while True:
     # Check if there is a significant amount of green pixels
     if is_there_green > 2000: #and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
         unfiltered_green_contours, green_hierarchy = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        # cv2.drawContours(img0, green_contours[0], -1, (255,255,0), 3)
+
+        green_contours_filtered = [contour for contour in unfiltered_green_contours if cv2.contourArea(contour) > 1000]
+        white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
+        
+        followable_green = []
+        for g_contour in green_contours_filtered:
+            cv2.drawContours(img0, [contour], -1, (0,255,0), 2)
+
+            # Find which white contour contains the green contour
+            containing_white_contour = None
+            for w_contour in white_contours_filtered:
+                if cv2.pointPolygonTest(w_contour, centerOfContour(g_contour), False) > 0:
+                    containing_white_contour = w_contour
+                    break
+
+            if containing_white_contour is not None:
+                # Check that the white contour touches the bottom of the screen, if not, we can ignore this green contour
+                lowest_point = tuple(containing_white_contour[containing_white_contour[:,:,1].argmax()][0])
+                if lowest_point[1] > img0.shape[0] - 3:
+                    # Let's follow this green turn. Mark it for processing
+                    followable_green.append({
+                        "g": g_contour,
+                        "w": containing_white_contour,
+                    })
+                    if len(followable_green) >= 2:
+                        break # There should never be more than 2 followable green contours, so we can stop looking for more
+
+        if len(followable_green) == 2:
+            # We have found 2 followable green contours, this means we need turn around 180 degrees
+            # TODO
+            pass
+        elif len(followable_green) == 1:
+            # Get the edges of the white contour that contains the green contour which aren't the side of the image
+            selected = followable_green[0]
 
         # TODO
 
