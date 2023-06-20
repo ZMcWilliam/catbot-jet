@@ -74,8 +74,6 @@ integral = 0
 # Motor stuff
 max_motor_speed = 100
 
-greenCenter = None
-
 cams = helper_camera.CameraController({
     "calibration_map": calibration_map,
     "black_line_threshold": config_values["black_line_threshold"],
@@ -164,8 +162,8 @@ def midpoint(p1, p2):
 frames = 0
 # check_thing = False
 start_time = time.time()
-# last_green_found_time = start_time - 1000
-last_intersection_time = time.time() - 100
+last_intersection_time = 0
+last_green_time = 0
 fpsTime = time.time()
 fpsLoop = 0
 fpsCamera = 0
@@ -175,6 +173,7 @@ hasMovedWindows = False
 
 double_check = 0
 gzDetected = False
+turning = False
 
 # Simplifies a given contour by reducing the number of points while maintaining the general shape
 # epsilon controls the level of simplification, with higher values resulting in more simplification
@@ -255,13 +254,16 @@ while True:
     # -----------
 
     is_there_green = np.count_nonzero(img0_green == 0)
-    turning = False
     black_contours_turn = None
 
     # print("Green: ", is_there_green)
     
+    img0_line_new = img0_line.copy()
+
     # Check if there is a significant amount of green pixels
-    if is_there_green > 2000: #and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
+    if is_there_green > 4000: #and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
+        changed_img0_line = None
+
         unfiltered_green_contours, green_hierarchy = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         green_contours_filtered = [contour for contour in unfiltered_green_contours if cv2.contourArea(contour) > 1000]
@@ -279,37 +281,77 @@ while True:
                     break
 
             if containing_white_contour is not None:
+                w_bounding_rect = cv2.boundingRect(containing_white_contour)
                 # Check that the white contour touches the bottom of the screen, if not, we can ignore this green contour
-                lowest_point = tuple(containing_white_contour[containing_white_contour[:,:,1].argmax()][0])
-                if lowest_point[1] > img0.shape[0] - 3:
+                if w_bounding_rect[1] + w_bounding_rect[3] >= img0.shape[0] - 3:
                     # Let's follow this green turn. Mark it for processing
                     followable_green.append({
                         "g": g_contour,
                         "w": containing_white_contour,
+                        "w_bounds": w_bounding_rect,
                     })
                     if len(followable_green) >= 2:
                         break # There should never be more than 2 followable green contours, so we can stop looking for more
 
-        if len(followable_green) == 2:
+        if len(followable_green) >= 2 and turning:
+            followable_green.sort(key=lambda x: x["w_bounds"][0])
+            if turning == "LEFT":
+                # If we are turning left, we want the leftmost green contour
+                followable_green = followable_green[:1]
+            elif turning == "RIGHT":
+                # If we are turning right, we want the rightmost green contour
+                followable_green = followable_green[-1:]
+            
+        if len(followable_green) == 2 and not turning:
             # We have found 2 followable green contours, this means we need turn around 180 degrees
             # TODO
+            print("DOUBLE GREEN")
             pass
         elif len(followable_green) == 1:
-            # Get the edges of the white contour that contains the green contour which aren't the side of the image
             selected = followable_green[0]
+            # Dilate selected["w"] to make it larger, and then use it as a mask
+            img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
+            cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
 
-        # TODO
+            # Mask the line image with the dilated white contour
+            img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
+            # Erode the line image to remove slight inconsistencies we don't want
+            img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
+
+            changed_img0_line = img0_line_new
+
+            last_green_time = time.time()
+            if not turning:
+                # Based on the centre location of the white contour, we are either turning left or right
+                if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
+                    print("Start Turn: left")
+                    turning = "LEFT"
+                else:
+                    print("Start Turn: right")
+                    turning = "RIGHT"
+            
+        if (changed_img0_line is not None):
+            print("Green caused a change in the line")
+            img0_line_new = changed_img0_line
+            new_black_contours, new_black_hierarchy = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(img0, new_black_contours, -1, (0,0,255), 2)
+            if (len(new_black_contours) > 0):
+                black_contours = new_black_contours
+                black_hierarchy = new_black_hierarchy
+            else:
+                print("No black contours found after changing contour")
+
+            changed_black_contour = False
 
         print("GREEN TURN STUFF")
-    else:
-        greenCenter = None # Reset greenturn memory if no green found!
+    elif turning is not None and last_green_time + 1 < time.time():
+        turning = None
+        print("No longer turning")
 
     # -----------
     # INTERSECTIONS
     # -----------
     if not turning:
-        img0_line_new = img0_line.copy()
-
         # Filter white contours to have a minimum area before we accept them 
         white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
 
@@ -706,20 +748,20 @@ while True:
         preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0", preview_image_img0)
 
-        preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_clean", preview_image_img0_clean)
+        # preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_clean", preview_image_img0_clean)
         
-        preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_binary", preview_image_img0_binary)
+        # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_binary", preview_image_img0_binary)
 
-        preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_line", preview_image_img0_line)
+        # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_line", preview_image_img0_line)
 
-        preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_green", preview_image_img0_green)
+        # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_green", preview_image_img0_green)
 
-        preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0_gray", preview_image_img0_gray)
+        # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
+        # cv2.imshow("img0_gray", preview_image_img0_gray)
 
         # def mouseCallbackHSV(event, x, y, flags, param):
         #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
@@ -748,14 +790,17 @@ while True:
         cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
         cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
         cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+        
+        if turning is not None:
+            cv2.putText(preview_image_img0_contours, f"{turning} Turning", (10, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 0, 255), 2) # DEBUG
 
         if isBigTurn:
-            cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 280), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-        cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
+        cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
-        cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 340), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+        cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
 
         preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_contours", preview_image_img0_contours)
