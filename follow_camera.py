@@ -208,6 +208,12 @@ while True:
             frames = 0
         print(f"Processing FPS: {fpsLoop} | Camera FPS: {cams.get_fps(0)} | Sleep time: {int(program_sleep_time*1000)}")
 
+    if cams.is_halted(0):
+        print("Camera is halted... Waiting")
+        m.stop_all()
+        time.sleep(0.1)
+        continue
+    
     changed_black_contour = False
     frame_processed = cams.read_stream_processed(0)
     if (frame_processed is None or frame_processed["resized"] is None):
