@@ -64,9 +64,9 @@ config_values = {
 }
 
 # Constants for PID control
-KP = 1 # Proportional gain
+KP = 1.1 # Proportional gain
 KI = 0  # Integral gain
-KD = 0.1  # Derivative gain
+KD = 0.08  # Derivative gain
 follower_speed = 40
 
 lastError = 0
@@ -167,7 +167,7 @@ last_green_time = 0
 fpsTime = time.time()
 fpsLoop = 0
 fpsCamera = 0
-delay = time.time()
+delay = 0
 
 hasMovedWindows = False
 
@@ -673,7 +673,7 @@ while True:
     # If the angle of the contour is big enough and the contour is close to the edge of the image (within bigTurnMargin pixels)
     # Then, the line likely is a big turn and we need to turn more
     isBigTurn = (
-        black_contour_angle > 85 
+        black_contour_angle > 70 
         and (
             horz_sorted_black_bounding_points_top_2[0][0] < bigTurnMargin  # If the leftmost point is close (bigTurnMargin) to the left side of the image
             or 
@@ -693,7 +693,7 @@ while True:
     # 
     # This does not apply if the line is a big turn
     if (
-        not isBigTurn
+        True
         and (
             black_leftmost_line_points[0][0] > black_leftmost_line_points[1][0]
             or (
@@ -737,6 +737,12 @@ while True:
     #Motor stuff
     current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
     current_position *= 100
+
+    topmost_point = sorted(black_bounding_box, key=lambda point: point[1])[0]
+    extra_pos = ((topmost_point[1]/img0.shape[1]) * 10)
+    if (isBigTurn):
+        # The closer the topmost point is to the bottom of the screen, the more we want to turn
+        current_position *= 1.5 * extra_pos
     
     current_steering = pid(-current_position)
     
