@@ -157,8 +157,6 @@ class CameraStream:
                     self.cam = get_camera(self.num)
                     self.cam.start()
                     print("Camera restarted, continuing", time.time())
-
-                    time.sleep(100)
                     
                 self.buffer_thread_id += 1
                 self.first_frame_found = False
