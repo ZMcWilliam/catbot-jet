@@ -18,6 +18,12 @@ import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
 import numpy as np
+import time
+import gpiozero
+import math
+import os
+import helper_motorkit as m
+from helper_cmps14 import CMPS14
 from gpiozero import AngularServo
 
 # ------------
@@ -28,6 +34,14 @@ PORT_SERVO_GATE = 12
 PORT_SERVO_CLAW = 13
 PORT_SERVO_LIFT = 18
 PORT_SERVO_CAM = 19
+PORT_USS_TRIG = {
+    "front": 23,
+    "side": 27,
+}
+PORT_USS_ECHO = {
+    "front": 24,
+    "side": 22,
+}
 
 # -------------
 # CONFIGURATION
@@ -42,7 +56,8 @@ KP = 1.1                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.08                           # Derivative gain
 
-follower_speed = 40                # Base speed of the line follower
+follower_speed = 40                 # Base speed of the line follower
+obstacle_treshold = 5               # Minimum distance treshold for obstacles (cm)
 
 # ---------------------
 # LOAD STORED JSON DATA
@@ -67,12 +82,11 @@ program_sleep_time = 0.01
 current_steering = 0
 last_line_pos = np.array([100,100])
 
-turning = False
+turning = None
 last_green_time = 0
 changed_black_contour = False
 current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
-
 
 pid_last_error = 0
 pid_integral = 0
@@ -86,12 +100,15 @@ fpsCamera = 0
 # ------------------
 # INITIALISE DEVICES
 # ------------------
-cams = helper_camera.CameraController({
-    "calibration_map": calibration_map,
-    "black_line_threshold": config_values["black_line_threshold"],
-    "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
-})
-cams.start_stream(0)
+cam = helper_camera.CameraStream(
+    camera_num = 0, 
+    processing_conf = {
+        "calibration_map": calibration_map,
+        "black_line_threshold": config_values["black_line_threshold"],
+        "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
+    }
+)
+cam.start_stream()
 
 servo = {
     "gate": AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
@@ -101,6 +118,130 @@ servo = {
 }
 
 debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
+
+USS = {
+    key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
+    for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
+}
+
+cmps = CMPS14(1, 0x61)
+
+# ------------------
+# OBSTACLE AVOIDANCE
+# ------------------
+def avoid_obstacle() -> None:
+    """
+    Performs obstacle avoidance when an obstacle is detected.
+    """
+    side_distance_threshold = 30 # Distance threshold for the side ultrasonic sensor to detect an obstacle
+    
+    def forward_until(distance: int, less_than: bool, check_for_line: bool = False, timeout: int = 10, debug_prefix: str = "") -> bool:
+        """
+        Obstacle avoidance helper:
+        Goes forward until the side ultrasonic sensor sees something less than the given distance.
+        Allows for checking for the existence of a line while going forward.
+
+        Args:
+            distance (int): The distance threshold for the side ultrasonic sensor to detect an obstacle.
+            less_than (bool): Flag indicating whether to check for a distance less than or greater than the given distance.
+            check_for_line (bool, optional): Flag indicating whether to check for a line while going forward. Defaults to False.
+            timeout (int, optional): The timeout in seconds. Defaults to 10.
+            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
+        """
+        m.run_tank(30, 30)
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            print(debug_prefix + "Side Distance: " + str(latest_data["distance_side"]))
+            
+            if check_for_line:
+                line = latest_data["line"]["scaled"]
+                debug_info["pos"] = calculate_position(line, debug_info["pos"], invert=False, prevent_invert=True)
+
+                if debug_info["line_contour_switches"] in ["010"] and sum(latest_data["line"]["scaled"]) > 70:
+                    print(debug_prefix + "Found line")
+                    return True
+                
+            # Check if the side ultrasonic sensor sees something within the requested range, and return if so
+            if less_than and latest_data["distance_side"] < distance:
+                return False
+            elif not less_than and latest_data["distance_side"] >= distance:
+                return False
+        return False
+
+    def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
+        """
+        Obstacle avoidance helper:
+        Aligns to the given bearing.
+
+        Args:
+            target_bearing (int): The bearing to align to.
+            cutoff_error (int): The error threshold to stop aligning.
+            timeout (int, optional): The timeout in seconds. Defaults to 10.
+            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
+        """
+        # Restrict target_bearing to 0-359
+        target_bearing = target_bearing % 360
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            current_bearing = cmps.read_bearing_16bit()
+            error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+            if error < cutoff_error:
+                print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
+                m.stop_all()
+                return True
+            
+            max_speed = 50 # Speed to rotate when error is 180
+            min_speed = 25 # Speed to rotate when error is 0
+
+            rotate_speed = min_speed + ((max_speed - min_speed)/math.sqrt(180)) * math.sqrt(error)
+
+            # Rotate in the direction closest to the bearing
+            if (current_bearing - target_bearing) % 360 < 180:
+                m.run_tank(-rotate_speed, rotate_speed)
+            else:
+                m.run_tank(rotate_speed, -rotate_speed)
+
+            print(f"{debug_prefix}Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}\tSpeed: {rotate_speed}")
+
+    m.run_tank_for_time(-40, -40, 500)
+
+    start_bearing = cmps.read_bearing_16bit()
+
+    align_to_bearing(start_bearing - 90, 1, debug_prefix="STEP 1 - ")
+
+    turn_count = 0
+    while turn_count < 4:
+        m.run_tank(30, 30)
+        # Go forward until side ultrasonic sees something less than 30cm 
+        # After the second turn, check for a line while going forward
+        if forward_until(side_distance_threshold, less_than=True, check_for_line=turn_count >= 2, debug_prefix="STEP A, TURN " + str(turn_count) + " - "):
+            break # Found a line
+        print("Found obstacle, side distance: " + str(latest_data["distance_side"]))
+        
+        # Keep going forward until side ultrasonic no longer sees object
+        if forward_until(side_distance_threshold, less_than=False, check_for_line=turn_count >= 2, debug_prefix="STEP B, TURN " + str(turn_count) + " - "):
+            break # Found a line
+        print("Lost obstacle, side distance: " + str(latest_data["distance_side"]))
+
+        # Did not find a line, so keep going forward a bit, turn right, and try again
+        m.run_tank_for_time(25, 25, 900)
+        align_to_bearing(start_bearing + (90 * turn_count), 1, debug_prefix="STEP C, TURN " + str(turn_count) + " - ") # 90 degree right turn
+        turn_count += 1
+        
+        time.sleep(0.5)
+
+    # We found the line, now reconnect and follow it
+    m.stop_all()
+    time.sleep(3)
+
+# ------------------------
+# WAIT FOR VISION TO START
+# ------------------------
+os.system("cat motd.txt")
+while cam.is_halted():
+    time.sleep(0.1)
 
 # ---------
 # MAIN LOOP
@@ -112,9 +253,9 @@ while True:
     time.sleep(program_sleep_time)
     frames += 1
 
-    if frames % 5 == 0 and frames != 0:
+    if frames % 30 == 0 and frames != 0:
         fpsLoop = int(frames/(time.time()-fpsTime))
-        fpsCamera = cams.get_fps(0)
+        fpsCamera = cam.get_fps()
 
         # Try to balance out the processing time and the camera FPS
         sleep_adjustment_amt = 0.001
@@ -128,19 +269,34 @@ while True:
         if frames > 500:
             fpsTime = time.time()
             frames = 0
-        print(f"Processing FPS: {fpsLoop} | Camera FPS: {cams.get_fps(0)} | Sleep time: {int(program_sleep_time*1000)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)}")
+
+    # ------------------
+    # OBSTACLE AVOIDANCE
+    # ------------------
+    front_dist = USS["front"].distance * 100
+    if front_dist < obstacle_treshold:
+        print(f"Obstacle detected at {front_dist}cm... ", end="")
+        m.stop_all()
+        time.sleep(0.7)
+        if USS["front"].distance * 100 < obstacle_treshold + 1:
+            print("Confirmed.")
+            avoid_obstacle()
+        else:
+            print("False positive, continuing.")
+        continue
 
     # -------------
     # VISION HANDLING
     # -------------
-    if cams.is_halted(0):
+    if cam.is_halted():
         print("Camera is halted... Waiting")
         m.stop_all()
         time.sleep(0.1)
         continue
     
     changed_black_contour = False
-    frame_processed = cams.read_stream_processed(0)
+    frame_processed = cam.read_stream_processed()
     if (frame_processed is None or frame_processed["resized"] is None):
         print("Waiting for image...")
         continue
@@ -635,7 +791,7 @@ while True:
     # DEBUG INFO
     # ----------
 
-    print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}")
+    print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}")
     if debug_switch.value:
         # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
         # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
@@ -720,5 +876,5 @@ while True:
             has_moved_windows = True
 
 m.stop_all()
-cams.stop()
+cam.stop()
 cv2.destroyAllWindows()

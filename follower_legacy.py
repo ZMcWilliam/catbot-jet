@@ -1,3 +1,5 @@
+# LEGACY FOLLOWER PROGRAM PRIOR TO CAMERA IMPLEMENTATION
+
 #  /\_/\  
 # ( o.o )
 #  > ^ <
