@@ -1,79 +1,91 @@
+#                                ██████╗ █████╗ ████████╗██████╗  ██████╗ ████████╗    ███╗   ██╗███████╗ ██████╗  
+#   _._     _,-'""`-._          ██╔════╝██╔══██╗╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝    ████╗  ██║██╔════╝██╔═══██╗ 
+#   (,-.`._,'(       |\`-/|     ██║     ███████║   ██║   ██████╔╝██║   ██║   ██║       ██╔██╗ ██║█████╗  ██║   ██║ 
+#       `-.-' \ )-`( , o o)     ██║     ██╔══██║   ██║   ██╔══██╗██║   ██║   ██║       ██║╚██╗██║██╔══╝  ██║   ██║ 
+#           `-    \`_`"'-       ╚██████╗██║  ██║   ██║   ██████╔╝╚██████╔╝   ██║       ██║ ╚████║███████╗╚██████╔╝ 
+#                                ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝       ╚═╝  ╚═══╝╚══════╝ ╚═════╝  
+
+# RoboCup Junior Rescue Line 2023 - Bordeaux, France
+# https://github.com/zmcwilliam/catbot-rcji
+
 import time
 import gpiozero
 import cv2
 import json
 import math
 import helper_camera
+import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
 import numpy as np
-import threading
 from gpiozero import AngularServo
-from typing import List, Tuple
 
-# Type aliases
-Contour = List[List[Tuple[int, int]]]
-
+# ------------
+# DEVICE PORTS
+# ------------
 PORT_DEBUG_SWITCH = 21
-
 PORT_SERVO_GATE = 12
 PORT_SERVO_CLAW = 13
 PORT_SERVO_LIFT = 18
 PORT_SERVO_CAM = 19
 
-servo = {
-    "gate": AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
-    "claw": AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
-    "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-80),   # -90=Up, 40=Down
-    "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-83)       # -90=Down, 90=Up
-}
+# -------------
+# CONFIGURATION
+# -------------
+max_error = 285                     # Maximum error value when calculating a percentage
+max_angle = 90                      # Maximum angle value when calculating a percentage
+error_weight = 0.5                  # Weight of the error value when calculating the PID input
+angle_weight = 1-error_weight       # Weight of the angle value when calculating the PID input
+black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
 
-debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
+KP = 1.1                            # Proportional gain
+KI = 0                              # Integral gain
+KD = 0.08                           # Derivative gain
 
-#System variables
-changed_angle = False
-last_line_pos = np.array([100,100])
-last_ang = 0
-current_steering = 0
-current_linefollowing_state = None
-white_intersection_cooldown = 0
-changed_black_contour = False
+follower_speed = 40                # Base speed of the line follower
 
-intersection_state_debug = ["", time.time()]
-
-# max_error_and_angle = 285 + 90
-max_error = 285
-max_angle = 90
-error_weight = 0.5
-angle_weight = 1-error_weight
-
-#Configs
-
-# Load the calibration map from the JSON file
+# ---------------------
+# LOAD STORED JSON DATA
+# ---------------------
 with open("calibration.json", "r") as json_file:
     calibration_data = json.load(json_file)
-calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
-
 with open("config.json", "r") as json_file:
     config_data = json.load(json_file)
 
-black_contour_threshold = 5000
+calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
     "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]]
 }
 
-# Constants for PID control
-KP = 1.1 # Proportional gain
-KI = 0  # Integral gain
-KD = 0.08  # Derivative gain
-follower_speed = 40
+# ----------------
+# SYSTEM VARIABLES
+# ----------------
+has_moved_windows = False
+program_sleep_time = 0.01
 
-lastError = 0
-integral = 0
-# Motor stuff
-max_motor_speed = 100
+current_steering = 0
+last_line_pos = np.array([100,100])
 
+turning = False
+last_green_time = 0
+changed_black_contour = False
+current_linefollowing_state = None
+intersection_state_debug = ["", time.time()]
+
+
+pid_last_error = 0
+pid_integral = 0
+
+frames = 0
+current_time = time.time()
+fpsTime = time.time()
+fpsLoop = 0
+fpsCamera = 0
+
+# ------------------
+# INITIALISE DEVICES
+# ------------------
 cams = helper_camera.CameraController({
     "calibration_map": calibration_map,
     "black_line_threshold": config_values["black_line_threshold"],
@@ -81,112 +93,22 @@ cams = helper_camera.CameraController({
 })
 cams.start_stream(0)
 
-# Calculate the distance between a point, and the last line position
-def distToLastLine(point):
-    if (point[0][0] > last_line_pos[0]):
-        return np.linalg.norm(np.array(point[0]) - last_line_pos)
-    else:
-        return np.linalg.norm(last_line_pos - point[0])
-    
-# Vectorize the distance function so it can be applied to a numpy array
-# This helps speed up calculations when calculating the distance of many points
-distToLastLineFormula = np.vectorize(distToLastLine)
+servo = {
+    "gate": AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
+    "claw": AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
+    "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
+    "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-71)       # -90=Down, 90=Up
+}
 
-# Processes a set of contours to find the best one to follow
-# Filters out contours that are too small, 
-# then, sorts the remaining contours by distance from the last line position
-def FindBestContours(contours):
-    """
-    Processes a set of contours to find the best one to follow
-    Filters out contours that are too small,
-    then, sorts the remaining contours by distance from the last line position
-    
-    Returns:
-        contour_values: A numpy array of contours, sorted by distance from the last line position
-        [
-            contour_area: float,
-            contour_rect: cv2.minAreaRect,
-            contour: np.array,
-            distance_from_last_line: float
-        ]
-    """
-    # Create a new array with the contour area, contour, and distance from the last line position (to be calculated later)
-    contour_values = np.array([[cv2.contourArea(contour), cv2.minAreaRect(contour), contour, 0] for contour in contours ], dtype=object)
+debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
 
-    # In case we have no contours, just return an empty array instead of processing any more
-    if len(contour_values) == 0:
-        return []
-    
-    # Filter out contours that are too small
-    contour_values = contour_values[contour_values[:, 0] > black_contour_threshold]
-    
-    # No need to sort if there is only one contour
-    if len(contour_values) <= 1:
-        return contour_values
-
-    # Sort contours by distance from the last known optimal line position
-    contour_values[:, 3] = distToLastLineFormula(contour_values[:, 1])
-    contour_values = contour_values[np.argsort(contour_values[:, 3])]
-    return contour_values
-
-current_time = time.time()
-
-def pid(error): # Calculate error beforehand
-    global current_time, integral, lastError
-    timeDiff = time.time() - current_time
-    if (timeDiff == 0):
-        timeDiff = 1/10
-    proportional = KP*(error)
-    integral += KI*error*timeDiff
-    derivative = KD*(error-lastError)/timeDiff
-    PIDOutput = -(proportional + integral + derivative)
-    lastError = error
-    current_time = time.time()
-    return PIDOutput
-
-def centerOfContour(contour):
-    M = cv2.moments(contour)
-    cX = int(M["m10"] / M["m00"])
-    cY = int(M["m01"] / M["m00"])
-    return (cX, cY)
-    # x, y, w, h = cv2.boundingRect(contour)
-    # return (int(x+(w/2)), int(y+(h/2)))
-def centerOfLine(line):
-    return (int((line[0][0]+line[1][0])/2), int((line[0][1]+line[1][1])/2))
-
-def pointDistance(p1, p2):
-    return math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)
-def midpoint(p1, p2):
-    return ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
-
-frames = 0
-# check_thing = False
-start_time = time.time()
-last_intersection_time = 0
-last_green_time = 0
-fpsTime = time.time()
-fpsLoop = 0
-fpsCamera = 0
-delay = 0
-
-hasMovedWindows = False
-
-double_check = 0
-gzDetected = False
-turning = False
-
-# Simplifies a given contour by reducing the number of points while maintaining the general shape
-# epsilon controls the level of simplification, with higher values resulting in more simplification
-# Then, returns the simplified contour as a list of points
-def simplifiedContourPoints(contour, epsilon=0.01):
-    epsilonBL = epsilon * cv2.arcLength(contour, True)
-    return [pt[0] for pt in cv2.approxPolyDP(contour, epsilonBL, True)]
-
-smallKernel = np.ones((5,5),np.uint8)
-
+# ---------
 # MAIN LOOP
-program_sleep_time = 0.01 # Initial sleep time
+# ---------
 while True:
+    # ---------------
+    # FRAME BALANCING
+    # ---------------
     time.sleep(program_sleep_time)
     frames += 1
 
@@ -208,6 +130,9 @@ while True:
             frames = 0
         print(f"Processing FPS: {fpsLoop} | Camera FPS: {cams.get_fps(0)} | Sleep time: {int(program_sleep_time*1000)}")
 
+    # -------------
+    # VISION HANDLING
+    # -------------
     if cams.is_halted(0):
         print("Camera is halted... Waiting")
         m.stop_all()
@@ -282,7 +207,7 @@ while True:
             # Find which white contour contains the green contour
             containing_white_contour = None
             for w_contour in white_contours_filtered:
-                if cv2.pointPolygonTest(w_contour, centerOfContour(g_contour), False) > 0:
+                if cv2.pointPolygonTest(w_contour, ck.centerOfContour(g_contour), False) > 0:
                     containing_white_contour = w_contour
                     break
 
@@ -354,9 +279,9 @@ while True:
         turning = None
         print("No longer turning")
 
-    # -----------
+    # -------------
     # INTERSECTIONS
-    # -----------
+    # -------------
     if not turning:
         # Filter white contours to have a minimum area before we accept them 
         white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
@@ -365,13 +290,13 @@ while True:
             contour_L = white_contours_filtered[0]
             contour_R = white_contours_filtered[1]
 
-            if centerOfContour(contour_L) > centerOfContour(contour_R):
+            if ck.centerOfContour(contour_L) > ck.centerOfContour(contour_R):
                 contour_L = white_contours_filtered[1]
                 contour_R = white_contours_filtered[0]
 
             # Simplify contours to get key points
-            contour_L_simple = simplifiedContourPoints(contour_L, 0.03)
-            contour_R_simple = simplifiedContourPoints(contour_R, 0.03)
+            contour_L_simple = ck.simplifiedContourPoints(contour_L, 0.03)
+            contour_R_simple = ck.simplifiedContourPoints(contour_R, 0.03)
 
             if len(contour_L_simple) < 2 or len(contour_R_simple) < 2:
                 print("2WC NOT ENOUGH POINTS?")
@@ -440,13 +365,13 @@ while True:
             
             intersection_state_debug = ["3-ng", time.time()]
             # Get the center of each contour
-            white_contours_filtered_with_center = [(contour, centerOfContour(contour)) for contour in white_contours_filtered]
+            white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
 
             # Sort the contours from left to right - Based on the centre of the contour's horz val
             sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
 
             # Simplify the contours to get the corner points
-            approx_contours = [simplifiedContourPoints(contour[0], 0.03) for contour in sorted_contours_horz]
+            approx_contours = [ck.simplifiedContourPoints(contour[0], 0.03) for contour in sorted_contours_horz]
 
             # Middle of contour centres
             mid_point = (
@@ -456,7 +381,7 @@ while True:
 
             # Get the closest point of the approx contours to the mid point
             def closestPointToMidPoint(approx_contour, mid_point):
-                return sorted(approx_contour, key=lambda point: pointDistance(point, mid_point))[0]
+                return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
 
             # Get the closest points of each approx contour to the mid point, and store the index of the contour to back reference later
             closest_points = [
@@ -465,7 +390,7 @@ while True:
             ]
             
             # Get the closest points, sorted by distance to mid point
-            sorted_closest_points = sorted(closest_points, key=lambda point: pointDistance(point[0], mid_point))
+            sorted_closest_points = sorted(closest_points, key=lambda point: ck.pointDistance(point[0], mid_point))
             closest_2_points_vert_sort = sorted(sorted_closest_points[:2], key=lambda point: point[0][1])
 
             # If a point is touching the top/bottom of the screen, it is quite possibly invalid and will cause some issues with cutting
@@ -559,7 +484,7 @@ while True:
         elif (len(white_contours_filtered) == 4):
             intersection_state_debug = ["4-ng", time.time()]
             # Get the center of each contour
-            white_contours_filtered_with_center = [(contour, centerOfContour(contour)) for contour in white_contours_filtered]
+            white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
 
             # Sort the contours from left to right - Based on the centre of the contour's horz val
             sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
@@ -569,10 +494,10 @@ while True:
             contour_BR, contour_TR = tuple(sorted(sorted_contours_horz[2:], reverse=True, key=lambda contour: contour[1][1]))
 
             # Simplify the contours to get the corner points
-            approx_BL = simplifiedContourPoints(contour_BL[0], 0.03)
-            approx_TL = simplifiedContourPoints(contour_TL[0], 0.03)
-            approx_BR = simplifiedContourPoints(contour_BR[0], 0.03)
-            approx_TR = simplifiedContourPoints(contour_TR[0], 0.03)
+            approx_BL = ck.simplifiedContourPoints(contour_BL[0], 0.03)
+            approx_TL = ck.simplifiedContourPoints(contour_TL[0], 0.03)
+            approx_BR = ck.simplifiedContourPoints(contour_BR[0], 0.03)
+            approx_TR = ck.simplifiedContourPoints(contour_TR[0], 0.03)
 
             # Middle of contour centres
             mid_point = (
@@ -582,7 +507,7 @@ while True:
 
             # Get the closest point of the approx contours to the mid point
             def closestPointToMidPoint(approx_contour, mid_point):
-                return sorted(approx_contour, key=lambda point: pointDistance(point, mid_point))[0]
+                return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
             
             closest_BL = closestPointToMidPoint(approx_BL, mid_point)
             closest_TL = closestPointToMidPoint(approx_TL, mid_point)
@@ -623,16 +548,12 @@ while True:
 
         changed_black_contour = False
 
-        # if current_linefollowing_state is not None and "2-ng" in current_linefollowing_state:
-        #     print("Resetting linefollowing state")
-        #     current_linefollowing_state = None
-
-    # -----------
+    # --------------------------
     # REST OF LINE LINE FOLLOWER
-    # -----------
+    # --------------------------
 
     #Find the black contours
-    sorted_black_contours = FindBestContours(black_contours)
+    sorted_black_contours = ck.findBestContours(black_contours, black_contour_threshold, last_line_pos)
     if (len(sorted_black_contours) == 0):
         print("No black contours found")
         m.run_steer(follower_speed, 100, current_steering)
@@ -641,7 +562,6 @@ while True:
         cv2.imshow("img0 - NBC", preview_image_img0)
         k = cv2.waitKey(1)
         if (k & 0xFF == ord('q')):
-            # pr.print_stats(SortKey.TIME)
             program_active = False
             break
         continue
@@ -686,24 +606,36 @@ while True:
     if isBigTurn == 1 and black_contour_angle_new > 0 or isBigTurn == 2 and black_contour_angle_new < 0:
         black_contour_angle_new = black_contour_angle_new*-1
         
-    #Motor stuff
     current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
     current_position *= 100
 
+    # The closer the topmost point is to the bottom of the screen, the more we want to turn
     topmost_point = sorted(black_bounding_box, key=lambda point: point[1])[0]
     extra_pos = ((topmost_point[1]/img0.shape[1]) * 10)
-    # The closer the topmost point is to the bottom of the screen, the more we want to turn
     if (isBigTurn and extra_pos > 1):
         current_position *= min(0.7 * extra_pos, 1)
     
-    current_steering = pid(-current_position)
-    
-    if time.time()-delay > 2:
-        motor_vals = m.run_steer(follower_speed, 100, current_steering)
-        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}")
-    elif time.time()-delay <= 4:
-        print(f"DELAY {4-time.time()+delay}")
+    # PID stuff
+    error = -current_position
 
+    timeDiff = time.time() - current_time
+    if (timeDiff == 0):
+        timeDiff = 1/10
+    proportional = KP*(error)
+    pid_integral += KI*error*timeDiff
+    derivative = KD*(error-pid_last_error)/timeDiff
+    current_steering = -(proportional + pid_integral + derivative)
+    
+    pid_last_error = error
+    current_time = time.time()
+
+    motor_vals = m.run_steer(follower_speed, 100, current_steering)
+
+    # ----------
+    # DEBUG INFO
+    # ----------
+
+    print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}")
     if debug_switch.value:
         # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
         # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
@@ -776,7 +708,7 @@ while True:
             program_active = False
             break
 
-        if not hasMovedWindows:
+        if not has_moved_windows:
             cv2.moveWindow("img0", 100, 100)
             # cv2.moveWindow("img0_binary", 100, 800)
             # cv2.moveWindow("img0_line", 100, 600)
@@ -785,7 +717,7 @@ while True:
             # cv2.moveWindow("img0_hsv", 0, 0)
             # cv2.moveWindow("img0_gray_scaled", 0, 0)
             cv2.moveWindow("img0_contours", 700, 100)
-            hasMovedWindows = True
+            has_moved_windows = True
 
 m.stop_all()
 cams.stop()
