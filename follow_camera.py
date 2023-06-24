@@ -655,94 +655,46 @@ while True:
 
     # Error (distance from the center of the image) and angle (of the line) of the chosen contour
     black_contour_error = int(last_line_pos[0] - (img0.shape[1]/2))
-    black_contour_angle = int(chosen_black_contour[1][2])
 
     # Sort the black bounding box points based on their y-coordinate (bottom to top)
     vert_sorted_black_bounding_points = sorted(black_bounding_box, key=lambda point: -point[1])
 
-    # Find leftmost line points based on splitting the bounding box into two vertical halves
-    black_leftmost_line_points = [
-        sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])[0], # Left-most point of the top two points
-        sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])[0]  # Left-most point of the bottom two points
-    ]
-    
+    # Find the bottom left, and top right points
+    black_bounding_box_BL = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])[0]
+    black_bounding_box_TR = sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])[1]
+
+    # Get the angle of the line between the bottom left and top right points
+    black_contour_angle = int(math.degrees(math.atan2(black_bounding_box_TR[1] - black_bounding_box_BL[1], black_bounding_box_TR[0] - black_bounding_box_BL[0])))
+    black_contour_angle_new = black_contour_angle + 80
+
     # The two top-most points, sorted from left to right
-    horz_sorted_black_bounding_points_top_2 = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])
-    
-    bigTurnMargin = 30
-    # If the angle of the contour is big enough and the contour is close to the edge of the image (within bigTurnMargin pixels)
-    # Then, the line likely is a big turn and we need to turn more
-    isBigTurn = (
-        black_contour_angle > 70 
-        and (
-            horz_sorted_black_bounding_points_top_2[0][0] < bigTurnMargin  # If the leftmost point is close (bigTurnMargin) to the left side of the image
-            or 
-            horz_sorted_black_bounding_points_top_2[1][0] > img0.shape[0] - bigTurnMargin # 
-        )
-    )
+    horz_sorted_black_bounding_points_top_2 = sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])
 
-    # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[0][0], 0), (horz_sorted_black_bounding_points_top_2[0][0], img0.shape[1]), (255, 255, 0), 3)
-    # cv2.line(img0, (horz_sorted_black_bounding_points_top_2[1][0], 0), (horz_sorted_black_bounding_points_top_2[1][0], img0.shape[1]), (255, 125, 0), 3)
+    # If the angle of the contour is big enough and the contour is close to the edge of the image (within bigTurnSideMargin pixels)
+    # Then, the line likely is a big turn and we will need to turn more
+    # 0 if None, 1 if left, 2 if right
+    isBigTurn = 0
 
+    bigTurnAngleMargin = 30
+    bigTurnSideMargin = 30
+    if abs(black_contour_angle_new) > bigTurnAngleMargin:
+        if horz_sorted_black_bounding_points_top_2[0][0] < bigTurnSideMargin:
+            isBigTurn = 1
+        elif horz_sorted_black_bounding_points_top_2[1][0] > img0.shape[1] - bigTurnSideMargin:
+            isBigTurn = 2
 
-    black_contour_angle_new = black_contour_angle
-    # If       the top left point is to the right of the bottom left point
-    #  or, if  the contour angle is above 80 and the last angle is close to 0 (+- 5)
-    #  or, if  the contour angle is above 80 and the current angle is close to 0 (+- 2) (bottom left point X-2 < top left point X < bottom left point X+2)
-    # Then, the contour angle is probably 90 degrees off what we want it to be, so subtract 90 degrees from it
-    # 
-    # This does not apply if the line is a big turn
-    if (
-        True
-        and (
-            black_leftmost_line_points[0][0] > black_leftmost_line_points[1][0]
-            or (
-                -5 < last_ang < 5 
-                and black_contour_angle_new > 80
-            ) 
-            or (
-                black_leftmost_line_points[1][0]-2 < black_leftmost_line_points[0][0] < black_leftmost_line_points[1][0]+2 
-                and black_contour_angle_new > 80
-            )
-        )
-    ):
-        black_contour_angle_new = black_contour_angle_new-90
-    
-
-    black_x, black_y, black_w, black_h = cv2.boundingRect(chosen_black_contour[2])
-
-    # If the contour angle is above 70 and the line is at the edge of the image, then flip the angle
-    if (black_contour_angle_new > 70 and black_x == 0 or black_contour_angle_new < -70 and black_x > img0.shape[1]-5):
+    if isBigTurn == 1 and black_contour_angle_new > 0 or isBigTurn == 2 and black_contour_angle_new < 0:
         black_contour_angle_new = black_contour_angle_new*-1
-        changed_angle = True
-
-    # If we haven't already changed the angle, 
-    #   and if the contour angle is above 80 and the last angle is below -20
-    #   or  if the contour angle is below -80 and the last angle is above 20 
-    # Then flip the angle
-    #
-    # This is to catch the case where the angle has flipped to the other side and needs to be flipped back
-    if (
-        not changed_angle 
-        and (
-            (black_contour_angle_new > 80 and last_ang < -20) 
-            or (black_contour_angle_new < -80 and last_ang > 20)
-        )
-    ):
-        black_contour_angle_new = black_contour_angle_new*-1
-        changed_ang = True
-    
-    last_ang = black_contour_angle_new
-
+        
     #Motor stuff
     current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
     current_position *= 100
 
     topmost_point = sorted(black_bounding_box, key=lambda point: point[1])[0]
     extra_pos = ((topmost_point[1]/img0.shape[1]) * 10)
-    if (isBigTurn):
-        # The closer the topmost point is to the bottom of the screen, the more we want to turn
-        current_position *= 1.5 * extra_pos
+    # The closer the topmost point is to the bottom of the screen, the more we want to turn
+    if (isBigTurn and extra_pos > 1):
+        current_position *= min(0.7 * extra_pos, 1)
     
     current_steering = pid(-current_position)
     
