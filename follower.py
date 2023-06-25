@@ -151,20 +151,17 @@ def avoid_obstacle() -> None:
         m.run_tank(30, 30)
         start_time = time.time()
         while time.time() - start_time < timeout:
-            print(debug_prefix + "Side Distance: " + str(latest_data["distance_side"]))
+            side_dist = USS["front"].distance * 100
+            print(f"{debug_prefix}Side Distance: {side_dist}")
             
             if check_for_line:
-                line = latest_data["line"]["scaled"]
-                debug_info["pos"] = calculate_position(line, debug_info["pos"], invert=False, prevent_invert=True)
-
-                if debug_info["line_contour_switches"] in ["010"] and sum(latest_data["line"]["scaled"]) > 70:
-                    print(debug_prefix + "Found line")
-                    return True
+                # TODO Check for line using camera
+                pass
                 
             # Check if the side ultrasonic sensor sees something within the requested range, and return if so
-            if less_than and latest_data["distance_side"] < distance:
+            if less_than and side_dist < distance:
                 return False
-            elif not less_than and latest_data["distance_side"] >= distance:
+            elif not less_than and side_dist >= distance:
                 return False
         return False
 
@@ -218,12 +215,12 @@ def avoid_obstacle() -> None:
         # After the second turn, check for a line while going forward
         if forward_until(side_distance_threshold, less_than=True, check_for_line=turn_count >= 2, debug_prefix="STEP A, TURN " + str(turn_count) + " - "):
             break # Found a line
-        print("Found obstacle, side distance: " + str(latest_data["distance_side"]))
+        print("Found obstacle")
         
         # Keep going forward until side ultrasonic no longer sees object
         if forward_until(side_distance_threshold, less_than=False, check_for_line=turn_count >= 2, debug_prefix="STEP B, TURN " + str(turn_count) + " - "):
             break # Found a line
-        print("Lost obstacle, side distance: " + str(latest_data["distance_side"]))
+        print("Lost obstacle")
 
         # Did not find a line, so keep going forward a bit, turn right, and try again
         m.run_tank_for_time(25, 25, 900)
