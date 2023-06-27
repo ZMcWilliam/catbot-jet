@@ -13,6 +13,7 @@ import gpiozero
 import cv2
 import json
 import math
+import signal
 import helper_camera
 import helper_camerakit as ck
 import helper_motorkit as m
@@ -129,6 +130,28 @@ USS = {
 
 cmps = CMPS14(1, 0x61)
 
+def exit_gracefully(signum = None, frame = None) -> None:
+    """
+    Handles program exit gracefully. Called by SIGINT signal.
+
+    Args:
+        signum (int, optional): Signal number. Defaults to None.
+        frame (frame, optional): Current stack frame. Defaults to None.
+    """
+    print("\n\nExiting Gracefully")
+    m.stop_all()
+    cam.stop()
+    cv2.destroyAllWindows()
+
+    for u in USS.values():
+        u.close()
+
+    for s in servo.values():
+        s.detach()
+    sys.exit()
+
+signal.signal(signal.SIGINT, exit_gracefully)
+
 # ------------------
 # OBSTACLE AVOIDANCE
 # ------------------
@@ -239,9 +262,18 @@ def avoid_obstacle() -> None:
 # ------------------------
 # WAIT FOR VISION TO START
 # ------------------------
+m.stop_all()
 os.system("cat motd.txt")
 while cam.is_halted():
     time.sleep(0.1)
+
+for i in range(3, 0, -1):
+    print(f"Starting in {i}...", end="\r")
+    time.sleep(1)
+
+# Clear the countdown line
+print("\033[K")
+print()
 
 # ---------
 # MAIN LOOP
@@ -893,6 +925,4 @@ while True:
             cv2.moveWindow("img0_contours", 700, 100)
             has_moved_windows = True
 
-m.stop_all()
-cam.stop()
-cv2.destroyAllWindows()
+exit_gracefully()
