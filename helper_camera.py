@@ -177,7 +177,6 @@ class CameraStream:
         
         print(f"[CAMERA] Buffer thread #{thread_id} has exited")
 
-
     def process_frame(self):
         frame = self.frame
         if frame is None:
@@ -220,12 +219,15 @@ class CameraStream:
             "binary": binary,
             "hsv": hsv,
             "green": green,
-            "line": line
+            "line": line,
         }
 
-    def stop_stream(self):
+    def stop(self):
         print(f"[CAMERA] Stopping stream for Camera {self.num}")
         self.stream_running = False
 
+    def set_processing_conf(self, conf):
+        self.processing_conf = conf
+        
     def get_fps(self):
         return int(self.frames/(time.time() - self.start_time))

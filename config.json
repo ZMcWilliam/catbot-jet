@@ -4,6 +4,10 @@
         [30, 45, 75],
         [75, 210, 210]
     ],
+    "red_hsv_threshold": [
+        [160, 80, 80],
+        [230, 210, 210]
+    ],
     "rescue_circle_conf": {
         "dp": 1,
         "minDist": 52,

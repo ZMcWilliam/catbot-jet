@@ -4,8 +4,8 @@ import cv2
 import helper_camera
 import numpy as np
 
-cams = helper_camera.CameraController()
-cams.start_stream(0)
+cam = helper_camera.CameraStream()
+cam.start_stream()
 
 calibration_images = {
     "w": [],
@@ -38,7 +38,7 @@ while True:
     calibration_images[requested] = []
 
     while NUM_CALIBRATION_IMAGES > len(calibration_images[requested]):
-        img = cams.read_stream(0)
+        img = cam.read_stream()
         if img is None:
             continue
         img = img[0:429, 0:img.shape[1]]
@@ -76,4 +76,4 @@ while True:
 
     print("Calibration images captured, updated calibration.json")
     
-cams.stop()
+cam.stop()

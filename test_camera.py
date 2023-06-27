@@ -6,8 +6,8 @@ import numpy as np
 from threading import Thread
 from picamera2 import Picamera2
 
-cams = helper_camera.CameraController()
-cams.start_stream(0)
+cam = helper_camera.CameraStream()
+cam.start_stream()
 time.sleep(1)
 
 # Load the calibration map from the JSON file
@@ -16,7 +16,7 @@ with open("calibration.json", "r") as json_file:
 calibration_map = np.array(calibration_data["calibration_map_w"], dtype=np.float32)
 
 while True:
-    img0 = cams.read_stream(0)
+    img0 = cam.read_stream(0)
     img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]]
     img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
 
@@ -38,4 +38,4 @@ while True:
     if (k & 0xFF == ord('q')):
         break
 
-cams.stop()
+cam.stop()

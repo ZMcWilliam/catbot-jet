@@ -70,7 +70,8 @@ with open("config.json", "r") as json_file:
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
-    "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]]
+    "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]],
+    "red_hsv_threshold": [np.array(bound) for bound in config_data["red_hsv_threshold"]],
 }
 
 # ----------------
@@ -87,6 +88,7 @@ last_green_time = 0
 changed_black_contour = False
 current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
+red_stop_check = 0
 
 pid_last_error = 0
 pid_integral = 0
@@ -106,6 +108,7 @@ cam = helper_camera.CameraStream(
         "calibration_map": calibration_map,
         "black_line_threshold": config_values["black_line_threshold"],
         "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
+        "red_hsv_threshold": config_values["red_hsv_threshold"],
     }
 )
 cam.start_stream()
@@ -307,6 +310,7 @@ while True:
     img0_gray = frame_processed["gray"].copy()
     img0_gray_scaled = frame_processed["gray_scaled"].copy()
     img0_binary = frame_processed["binary"].copy()
+    img0_hsv = frame_processed["hsv"].copy()
     img0_green = frame_processed["green"].copy()
     img0_line = frame_processed["line"].copy()
     
@@ -431,6 +435,37 @@ while True:
     elif turning is not None and last_green_time + 1 < time.time():
         turning = None
         print("No longer turning")
+    
+    # -----------------
+    # STOP ON RED CHECK
+    # -----------------
+    # Since red is rare, and only occurs at the very end of the course, only check for it every 5 frames
+    if frames % (1 if debug_switch.value else 5) == 0 or red_stop_check > 0:
+        img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
+        img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+
+        red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
+        red_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
+        red_contours_filtered = [contour[0] for contour in red_contours if contour[1] > 20000]
+
+        if len(red_contours_filtered) > 0:
+            edges = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(red_contours_filtered[0]), img0_binary.shape))
+            if edges == ["left", "right"]:
+                print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
+                m.stop_all()
+                red_stop_check += 1
+                time.sleep(1)
+
+                cv2.imshow("img0_red", img0_red)
+                cv2.waitKey(1)
+                    
+                if red_stop_check > 3:
+                    print("DETECTED RED STOP 3 TIMES, STOPPING")
+                    break
+
+                continue # Don't run the rest of the follower, we don't really want to move forward in case we accidentally loose the red...
+            else:
+                red_stop_check = 0
 
     # -------------
     # INTERSECTIONS
@@ -586,22 +621,8 @@ while True:
 
                 contour_center_point_sides[side == "left"].append(contour[1])
             
-            # For the topmost contour in closest_2_points_vert_sort, find the edges that it touches
-            def get_touching_edges(contour):
-                edges = []
-                for point in contour:
-                    if point[0] == 0 and "left" not in edges:
-                        edges.append("left")
-                    if point[0] == img0_binary.shape[1]-1 and "right" not in edges:
-                        edges.append("right")
-                    if point[1] == 0 and "top" not in edges:
-                        edges.append("top")
-                    if point[1] == img0_binary.shape[0]-1 and "bottom" not in edges:
-                        edges.append("bottom")
-                return edges
-
             # Get the edges that the contour not relevant to the closest points touches
-            edges_big = sorted(get_touching_edges(approx_contours[sorted_closest_points[2][1]]))
+            edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
 
             # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
             cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])

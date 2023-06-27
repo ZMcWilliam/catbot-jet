@@ -137,3 +137,26 @@ def simplifiedContourPoints(contour: Contour, epsilon: float = 0.01) -> list[tup
     """
     epsilonBL = epsilon * cv2.arcLength(contour, True)
     return [pt[0] for pt in cv2.approxPolyDP(contour, epsilonBL, True)]
+
+def getTouchingEdges(points: list[tuple[int, int]], shape: tuple[int, int]) -> list[str]:
+    """
+    Determines which edges of an image a given contour is touching.
+
+    Args:
+        points (list[tuple[int, int]]): The list of points to check
+        shape (tuple[int, int]): The shape of the image. (height, width)
+
+    Returns:
+        list[str]: A list of strings (left, right, top, bottom) representing the edges that the contour is touching.
+    """
+    edges = []
+    for point in points:
+        if point[0] == 0 and "left" not in edges:
+            edges.append("left")
+        if point[0] == shape[1]-1 and "right" not in edges:
+            edges.append("right")
+        if point[1] == 0 and "top" not in edges:
+            edges.append("top")
+        if point[1] == shape[0]-1 and "bottom" not in edges:
+            edges.append("bottom")
+    return edges

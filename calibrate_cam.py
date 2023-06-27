@@ -7,8 +7,6 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-cams = helper_camera.CameraController()
-cams.start_stream(0)
 
 # Load the calibration map from the JSON file
 with open("calibration.json", "r") as json_file:
@@ -22,8 +20,20 @@ black_contour_threshold = 5000
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
     "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]],
+    "red_hsv_threshold": [np.array(bound) for bound in config_data["red_hsv_threshold"]],
     "rescue_circle_conf": config_data["rescue_circle_conf"],
 }
+
+cam = helper_camera.CameraStream(
+    camera_num = 0, 
+    processing_conf = {
+        "calibration_map": calibration_map,
+        "black_line_threshold": config_values["black_line_threshold"],
+        "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
+        "red_hsv_threshold": config_values["red_hsv_threshold"],
+    }
+)
+cam.start_stream()
 
 frames = 0
 fpsTime = time.time()
@@ -103,6 +113,59 @@ green_v_max_value = tk.StringVar()
 green_v_max_label = ttk.Label(frame, textvariable=green_v_max_value)
 green_v_max_label.pack()
 
+
+# Create sliders for red_hsv_threshold
+red_label = ttk.Label(frame, text="red_hsv_threshold")
+red_label.pack()
+
+red_h_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_h_min_slider.set(config_values["red_hsv_threshold"][0][0])  # Set initial value
+red_h_min_slider.pack()
+
+red_h_min_value = tk.StringVar()
+red_h_min_label = ttk.Label(frame, textvariable=red_h_min_value)
+red_h_min_label.pack()
+
+red_s_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_s_min_slider.set(config_values["red_hsv_threshold"][0][1])  # Set initial value
+red_s_min_slider.pack()
+
+red_s_min_value = tk.StringVar()
+red_s_min_label = ttk.Label(frame, textvariable=red_s_min_value)
+red_s_min_label.pack()
+
+red_v_min_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_v_min_slider.set(config_values["red_hsv_threshold"][0][2])  # Set initial value
+red_v_min_slider.pack()
+
+red_v_min_value = tk.StringVar()
+red_v_min_label = ttk.Label(frame, textvariable=red_v_min_value)
+red_v_min_label.pack()
+
+red_h_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_h_max_slider.set(config_values["red_hsv_threshold"][1][0])  # Set initial value
+red_h_max_slider.pack()
+
+red_h_max_value = tk.StringVar()
+red_h_max_label = ttk.Label(frame, textvariable=red_h_max_value)
+red_h_max_label.pack()
+
+red_s_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_s_max_slider.set(config_values["red_hsv_threshold"][1][1])  # Set initial value
+red_s_max_slider.pack()
+
+red_s_max_value = tk.StringVar()
+red_s_max_label = ttk.Label(frame, textvariable=red_s_max_value)
+red_s_max_label.pack()
+
+red_v_max_slider = ttk.Scale(frame, from_=0, to=255, orient="horizontal", length=400)
+red_v_max_slider.set(config_values["red_hsv_threshold"][1][2])  # Set initial value
+red_v_max_slider.pack()
+
+red_v_max_value = tk.StringVar()
+red_v_max_label = ttk.Label(frame, textvariable=red_v_max_value)
+red_v_max_label.pack()
+
 # Create sliders for rescue_circle_conf
 rescue_circle_minDist_label = ttk.Label(frame, text="rescue_circle_minDist")
 rescue_circle_minDist_label.pack()
@@ -179,6 +242,21 @@ def on_slider_change(event):
 
     config_values["green_turn_hsv_threshold"] = green_turn_hsv_threshold
 
+    red_h_min = int(red_h_min_slider.get())
+    red_s_min = int(red_s_min_slider.get())
+    red_v_min = int(red_v_min_slider.get())
+    red_h_max = int(red_h_max_slider.get())
+    red_s_max = int(red_s_max_slider.get())
+    red_v_max = int(red_v_max_slider.get())
+
+    # Convert the red threshold values to numpy arrays
+    red_hsv_threshold = [
+        np.array([red_h_min, red_s_min, red_v_min]),
+        np.array([red_h_max, red_s_max, red_v_max])
+    ]
+
+    config_values["red_hsv_threshold"] = red_hsv_threshold
+
     config_values["rescue_circle_conf"]["minDist"] = int(rescue_circle_minDist_slider.get())
     config_values["rescue_circle_conf"]["param1"] = int(rescue_circle_param1_slider.get())
     config_values["rescue_circle_conf"]["param2"] = int(rescue_circle_param2_slider.get())
@@ -193,6 +271,13 @@ def on_slider_change(event):
     green_h_max_value.set(str(int(green_h_max_slider.get())))
     green_s_max_value.set(str(int(green_s_max_slider.get())))
     green_v_max_value.set(str(int(green_v_max_slider.get())))
+
+    red_h_min_value.set(str(int(red_h_min_slider.get())))
+    red_s_min_value.set(str(int(red_s_min_slider.get())))
+    red_v_min_value.set(str(int(red_v_min_slider.get())))
+    red_h_max_value.set(str(int(red_h_max_slider.get())))
+    red_s_max_value.set(str(int(red_s_max_slider.get())))
+    red_v_max_value.set(str(int(red_v_max_slider.get())))
 
     rescue_circle_minDist_value.set(str(int(rescue_circle_minDist_slider.get())))
     rescue_circle_param1_value.set(str(int(rescue_circle_param1_slider.get())))
@@ -210,6 +295,13 @@ green_h_max_slider.bind("<B1-Motion>", on_slider_change)
 green_s_max_slider.bind("<B1-Motion>", on_slider_change)
 green_v_max_slider.bind("<B1-Motion>", on_slider_change)
 
+red_h_min_slider.bind("<B1-Motion>", on_slider_change)
+red_s_min_slider.bind("<B1-Motion>", on_slider_change)
+red_v_min_slider.bind("<B1-Motion>", on_slider_change)
+red_h_max_slider.bind("<B1-Motion>", on_slider_change)
+red_s_max_slider.bind("<B1-Motion>", on_slider_change)
+red_v_max_slider.bind("<B1-Motion>", on_slider_change)
+
 rescue_circle_minDist_slider.bind("<B1-Motion>", on_slider_change)
 rescue_circle_param1_slider.bind("<B1-Motion>", on_slider_change)
 rescue_circle_param2_slider.bind("<B1-Motion>", on_slider_change)
@@ -222,40 +314,32 @@ def main_program():
         if frames % 20 == 0 and frames != 0:
             fpsCurrent = int(20/(time.time()-fpsTime))
             fpsTime = time.time()
-            print(f"Processing FPS: {fpsCurrent} | Camera FPS: {cams.get_fps(0)}")
+            print(f"Processing FPS: {fpsCurrent} | Camera FPS: {cam.get_fps()}")
+        
+        cam.set_processing_conf({
+            "calibration_map": calibration_map,
+            "black_line_threshold": config_values["black_line_threshold"],
+            "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
+            "red_hsv_threshold": config_values["red_hsv_threshold"],
+        })
 
-        changed_black_contour = False
-        img0 = cams.read_stream(0)
-        # cv2.imwrite("testImg.jpg", img0)
-        if (img0 is None):
+        frame_processed = cam.read_stream_processed()
+        if (frame_processed is None or frame_processed["resized"] is None):
+            print("Waiting for image...")
             continue
-        img0 = img0.copy()
 
-        img0 = img0[0:429, 0:img0.shape[1]]
-        img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
-
+        img0 = frame_processed["resized"].copy()
         img0_clean = img0.copy() # Used for displaying the image without any overlays
 
-        # #Find the black in the image
-        img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
-        # img0_gray = cv2.equalizeHist(img0_gray)
-        img0_gray = cv2.GaussianBlur(img0_gray, (5, 5), 0)
+        img0_gray = frame_processed["gray"].copy()
+        img0_gray_scaled = frame_processed["gray_scaled"].copy()
+        img0_binary = frame_processed["binary"].copy()
+        img0_hsv = frame_processed["hsv"].copy()
+        img0_green = frame_processed["green"].copy()
+        img0_line = frame_processed["line"].copy()
 
-        print(config_values["black_line_threshold"])
-        img0_gray_scaled = calibration_map * img0_gray
-
-        img0_binary = ((img0_gray_scaled > config_values["black_line_threshold"]) * 255).astype(np.uint8)
-        img0_binary = cv2.morphologyEx(img0_binary, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
-
-        img0_hsv = cv2.cvtColor(img0, cv2.COLOR_RGB2HSV)
-
-        #Find the green in the image
-        img0_green = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["green_turn_hsv_threshold"][0], config_values["green_turn_hsv_threshold"][1]))
-        img0_green = cv2.erode(img0_green, np.ones((5,5),np.uint8), iterations=1)
-
-        # #Remove the green from the black (since green looks like black when grayscaled)
-        img0_line = cv2.dilate(img0_binary, np.ones((5,5),np.uint8), iterations=2)
-        img0_line = cv2.bitwise_or(img0_binary, cv2.bitwise_not(img0_green))
+        img0_red = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1]))
+        img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
 
         # -----------
         circles = cv2.HoughCircles(img0_gray, cv2.HOUGH_GRADIENT, **config_values["rescue_circle_conf"])
@@ -289,18 +373,21 @@ def main_program():
         preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_green", preview_image_img0_green)
 
+        preview_image_img0_red = cv2.resize(img0_red, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_red", preview_image_img0_red)
+
         preview_image_img0_circles = cv2.resize(img0_circles, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_circles", preview_image_img0_circles)
 
-        # def mouseCallbackHSV(event, x, y, flags, param):
-        #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
-        #         # Print HSV value only when the left mouse button is pressed and mouse is moving
-        #         hsv_value = img0_hsv[y, x]
-        #         print(f"HSV: {hsv_value}")
-        # # Show HSV preview with text on hover to show HSV values
-        # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
-        # cv2.imshow("img0_hsv", preview_image_img0_hsv)
-        # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
+        def mouseCallbackHSV(event, x, y, flags, param):
+            if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
+                # Print HSV value only when the left mouse button is pressed and mouse is moving
+                hsv_value = img0_hsv[y, x]
+                print(f"HSV: {hsv_value}")
+        # Show HSV preview with text on hover to show HSV values
+        preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_hsv", preview_image_img0_hsv)
+        cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
 
         preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
@@ -309,7 +396,7 @@ def main_program():
         if (k & 0xFF == ord('q')):
             break
 
-    cams.stop()
+    cam.stop()
 
 # Start the main program logic in a new thread
 program_thread = threading.Thread(target=main_program)
