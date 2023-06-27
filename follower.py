@@ -9,23 +9,22 @@
 # https://github.com/zmcwilliam/catbot-rcji
 
 import time
-import gpiozero
-import cv2
+import os
+import sys
 import json
+import board
 import math
+import cv2
 import signal
+import busio
+import gpiozero
+import numpy as np
+import adafruit_vl6180x
 import helper_camera
 import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
-import numpy as np
-import time
-import gpiozero
-import math
-import os
-import helper_motorkit as m
 from helper_cmps14 import CMPS14
-from gpiozero import AngularServo
 
 # ------------
 # DEVICE PORTS
@@ -103,6 +102,8 @@ fpsCamera = 0
 # ------------------
 # INITIALISE DEVICES
 # ------------------
+i2c = busio.I2C(board.SCL, board.SDA)
+
 cam = helper_camera.CameraStream(
     camera_num = 0, 
     processing_conf = {
@@ -115,10 +116,10 @@ cam = helper_camera.CameraStream(
 cam.start_stream()
 
 servo = {
-    "gate": AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
-    "claw": AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
-    "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
-    "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-71)       # -90=Down, 90=Up
+    "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
+    "claw": gpiozero.AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
+    "lift": gpiozero.AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
+    "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-71)       # -90=Down, 90=Up
 }
 
 debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
@@ -129,6 +130,9 @@ USS = {
 }
 
 cmps = CMPS14(1, 0x61)
+
+vl6180x = adafruit_vl6180x.VL6180X(i2c)
+vl6180x_gain = adafruit_vl6180x.ALS_GAIN_1 # See test_tof.py for more values
 
 def exit_gracefully(signum = None, frame = None) -> None:
     """

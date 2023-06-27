@@ -3,6 +3,7 @@ colorama
 adafruit-circuitpython-motorkit
 adafruit-circuitpython-tca9548a
 adafruit-circuitpython-ads1x15
+adafruit-circuitpython-vl6180x
 smbus2
 piicodev
 gpiozero
