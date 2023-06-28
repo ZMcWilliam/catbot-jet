@@ -8,12 +8,18 @@ kit = MotorKit()
 # Direction config, such that a positive speed value will be "straight" for each motor
 conf_directions = [1, -1, -1, 1]
 
+# These should correlate to what we want as speed "30" for each motor
+# such that run of ("front_l", 30) will run the front right motor at 40
+conf_offsets = [40, 25, 26, 28];
+
+# Physical port numbers for each motor
 conf_tank = {
     "front_l": 1,
     "front_r": 0,
     "back_l": 2,
     "back_r": 3
 }
+
  
 def motor(num: int) -> adafruit_motor.motor.DCMotor:
     """
@@ -54,7 +60,8 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         speed = -100
 
     for target in targets:
-        motor(target).throttle = speed / 100 * conf_directions[target]
+        offset_speed = (speed - 30) + conf_offsets[target]
+        motor(target).throttle = offset_speed / 100 * conf_directions[target]
 
 def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = [-15, 25]) -> List[float]:
     """
