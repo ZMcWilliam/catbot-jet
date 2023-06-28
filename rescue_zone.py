@@ -59,6 +59,11 @@ fpsCamera = 0
 
 hasMovedWindows = False
 
+last_circle_height = -1
+circle_check_counter = 0
+
+EVAC_CAM_ANGLE = 4
+
 # MAIN LOOP
 program_sleep_time = 0.01 # Initial sleep time
 while True:
@@ -94,7 +99,9 @@ while True:
     img0_binary_rescue = ((calibration_map_rescue * img0_gray > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
     img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
 
-    servo["cam"].angle = 4
+    servo["cam"].angle = EVAC_CAM_ANGLE
+    servo["lift"].angle = 40
+    servo["claw"].angle = 0
 
     # minDist = min distance between circles
     # param1 = high threshold for canny edge detection (sensitivity) - lower = more circles
@@ -139,6 +146,38 @@ while True:
             cv2.putText(img0_circles, "#{}".format(i), (x , y), cv2.FONT_HERSHEY_SIMPLEX,1.0, (255, 255, 255), 2)
 
         print(f"{len(valid_circles)}/{len(detected_circles)} circles")
+
+        lowest_circle = valid_circles[0]
+
+        # If the circle is +-100 pixels horizontally away from the centre, steer the robot towards it
+        if lowest_circle[0] < (img0.shape[1] / 2) - 100:
+            print("Circle is to the left")
+            m.run_tank_for_time(-40, 40, 50, False)
+        elif lowest_circle[0] > (img0.shape[1] / 2) + 100:
+            print("Circle is to the right")
+            m.run_tank_for_time(40, -40, 50, False)
+        else:
+            print("Circle is in the centre-ish")
+
+            THRESH_FINAL_APPROACH = 380
+            if lowest_circle[1] > THRESH_FINAL_APPROACH:
+                print("Circle has reached final approach")
+                time.sleep(0.2)
+                m.run_tank_for_time(40, 40, 1000)
+                time.sleep(0.2)
+                servo["claw"].angle = -90
+                time.sleep(0.2)
+                servo["cam"].angle = -80 # Ensure cam is out of the way before we do lifting actions
+                time.sleep(0.2)
+                servo["lift"].angle = -80
+                time.sleep(0.8)
+                servo["claw"].angle = -45
+                time.sleep(0.5)
+                servo["lift"].angle = 40
+                servo["claw"].angle = 0
+                time.sleep(0.2)
+                servo["cam"].angle = EVAC_CAM_ANGLE
+            m.run_tank_for_time(40, 40, 200)
                                         
     cv2.imshow("img0_circles", img0_circles)
     cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
