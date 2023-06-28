@@ -100,7 +100,7 @@ def run_tank(left_speed: int, right_speed: int) -> None:
     run([conf_tank["front_l"], conf_tank["back_l"]], left_speed)
     run([conf_tank["front_r"], conf_tank["back_r"]], right_speed)
 
-def run_tank_for_time(left_speed: int, right_speed: int, duration: float) -> None:
+def run_tank_for_time(left_speed: int, right_speed: int, duration: float, brake: bool = True) -> None:
     """
     Run a tank drive at a given speed for a given duration.
 
@@ -108,10 +108,11 @@ def run_tank_for_time(left_speed: int, right_speed: int, duration: float) -> Non
         left_speed (int): The speed to run the left motors at (-100 to 100).
         right_speed (int): The speed to run the right motors at (-100 to 100).
         duration (float): The duration to run the motors for (in milliseconds).
+        brake (bool, optional): Whether to brake the motors (True) or just coast (False).
     """
     run_tank(left_speed, right_speed)
     time.sleep(duration / 1000)
-    stop_all()
+    stop_all(brake)
 
 def stop(targets: Union[int, List[int]], brake: bool = False) -> None:
     """

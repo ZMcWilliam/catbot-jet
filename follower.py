@@ -343,8 +343,8 @@ while True:
     img0 = frame_processed["resized"].copy()
     img0_clean = img0.copy() # Used for displaying the image without any overlays
 
-    img0_gray = frame_processed["gray"].copy()
-    img0_gray_scaled = frame_processed["gray_scaled"].copy()
+    # img0_gray = frame_processed["gray"].copy()
+    # img0_gray_scaled = frame_processed["gray_scaled"].copy()
     img0_binary = frame_processed["binary"].copy()
     img0_hsv = frame_processed["hsv"].copy()
     img0_green = frame_processed["green"].copy()

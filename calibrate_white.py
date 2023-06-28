@@ -9,6 +9,7 @@ cam.start_stream()
 
 calibration_images = {
     "w": [],
+    "rescue_w": [],
 }
 
 NUM_CALIBRATION_IMAGES = 50
@@ -19,6 +20,8 @@ time.sleep(1)
 calibration_data = {
     "calibration_value_w": 0, 
     "calibration_map_w": [],
+    "calibration_value_rescue_w": 0, 
+    "calibration_map_rescue_w": [],
 }
 try:
     with open("calibration.json", "r") as json_file:
@@ -27,12 +30,12 @@ except:
     pass # If the file doesn't exist, we'll create it later
 
 while True:
-    requested = input("Enter 'w' for white calibration, or 'q' to quit: ")
+    requested = input("Enter 'w' for white calibration, 'rescue_w' for rescue white calibration, or 'q' to quit: ")
     
     if requested == "q":
         break
 
-    if requested not in ["w", "b"]:
+    if requested not in calibration_images:
         continue
 
     calibration_images[requested] = []

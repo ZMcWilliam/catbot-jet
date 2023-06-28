@@ -1,5 +1,6 @@
 {
     "black_line_threshold": 175,
+    "black_rescue_threshold": 130,
     "green_turn_hsv_threshold": [
         [30, 45, 75],
         [75, 210, 210]
@@ -11,9 +12,12 @@
     "rescue_circle_conf": {
         "dp": 1,
         "minDist": 52,
-        "param1": 20,
-        "param2": 34,
-        "minRadius": 4,
-        "maxRadius": 92
+        "param1": 21,
+        "param2": 27,
+        "minRadius": 20,
+        "maxRadius": 92,
+        "heightBuffer": 345,
+        "lowHeightMinRadius": 40,
+        "grayScaleMultiplier": 1.5
     }
 }
