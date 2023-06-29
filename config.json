@@ -9,12 +9,16 @@
         [160, 80, 80],
         [230, 210, 210]
     ],
+    "rescue_block_hsv_threshold": [
+        [20, 0, 0],
+        [170, 255, 255]
+    ],
     "rescue_circle_conf": {
         "dp": 1,
         "minDist": 52,
         "param1": 21,
         "param2": 27,
-        "minRadius": 20,
+        "minRadius": 4,
         "maxRadius": 92,
         "heightBuffer": 345,
         "lowHeightMinRadius": 40,

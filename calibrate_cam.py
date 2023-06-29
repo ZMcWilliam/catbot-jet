@@ -388,6 +388,9 @@ def main_program():
         img0_binary_rescue = ((calibration_map_rescue * img0_gray > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
         img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
 
+        # Only areas of img0_binary_rescue that are also in img0_red are kept (temp using red as mask for now, need to reduce the mess of this script)
+        img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), cv2.bitwise_not(img0_red))
+
         img0_gray_rescue_scaled = img0_gray * config_values["rescue_circle_conf"]["grayScaleMultiplier"]
         img0_gray_rescue_scaled = np.clip(img0_gray_rescue_scaled, 0, 255).astype(np.uint8)
 
@@ -443,6 +446,9 @@ def main_program():
 
         preview_image_img0_binary_rescue = cv2.resize(img0_binary_rescue, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_binary_rescue", preview_image_img0_binary_rescue)
+
+        preview_image_img0_binary_rescue_block = cv2.resize(img0_binary_rescue_block, (0,0), fx=0.8, fy=0.7)
+        cv2.imshow("img0_binary_rescue_block", preview_image_img0_binary_rescue_block)
 
         preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
         cv2.imshow("img0_line", preview_image_img0_line)

@@ -60,6 +60,7 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         speed = -100
 
     for target in targets:
+        offset_speed = 0
         if speed > 10: 
             offset_speed = (speed - 30) + conf_offsets[target]
         elif speed < -10:
