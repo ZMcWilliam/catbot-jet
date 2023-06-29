@@ -4,13 +4,13 @@ import os
 import sys
 import signal
 import subprocess
-import motorkit_helper as m
+import helper_motorkit as m
 from git import Repo
 from colorama import init
 
 init()
 
-RUN_PIN = 19
+RUN_PIN = 21
 ENABLE_GIT = False
 
 GPIO.setmode(GPIO.BCM)

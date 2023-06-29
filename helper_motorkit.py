@@ -60,7 +60,14 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         speed = -100
 
     for target in targets:
-        offset_speed = (speed - 30) + conf_offsets[target]
+        if speed > 10: 
+            offset_speed = (speed - 30) + conf_offsets[target]
+        elif speed < -10:
+            offset_speed = (speed + 30) - conf_offsets[target]
+            
+        if offset_speed > 100: offset_speed = 100
+        elif offset_speed < -100: offset_speed = -100
+
         motor(target).throttle = offset_speed / 100 * conf_directions[target]
 
 def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = [-15, 25]) -> List[float]:
