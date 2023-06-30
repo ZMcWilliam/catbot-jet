@@ -69,8 +69,12 @@ bottom_block_approach_counter = 0
 
 EVAC_CAM_ANGLE = 4
 
+rescue_mode = "init"
+ball_found_qty = [0, 0] # Silver, Black
+
 def approach_victim(time_to_approach):
     global last_circle_pos
+    global ball_found_qty
     time.sleep(0.2)
     m.run_tank(40, 40)
     time.sleep(time_to_approach - 0.1)
@@ -80,17 +84,34 @@ def approach_victim(time_to_approach):
     time.sleep(0.2)
     servo["cam"].angle = -80 # Ensure cam is out of the way before we do lifting actions
     m.run_tank_for_time(-40, -40, 800)
-    servo["lift"].angle = -80
-    time.sleep(0.8)
-    servo["claw"].angle = -45
-    time.sleep(0.5)
-    servo["lift"].angle = 40
-    servo["claw"].angle = 0
+    
+    if check_found_ball():
+        print("Successful capture, lifting")
+        servo["lift"].angle = -80
+        time.sleep(0.8)
+        servo["claw"].angle = -45
+    else:
+        print("Did not capture a ball.")
+
+    print("Total balls found: " + str(sum(ball_found_qty)))
+    if sum(ball_found_qty) < 3:
+        time.sleep(0.5)
+        servo["lift"].angle = 40
+        servo["claw"].angle = 0
+
     time.sleep(0.2)
     servo["cam"].angle = EVAC_CAM_ANGLE
     time.sleep(0.7)
+
     last_circle_pos = None
-    
+
+def check_found_ball():
+    global ball_found_qty
+
+    # TODO: Add an actual check if we have a ball or not, and what type it is. (Using VL6180X)
+    ball_found_qty[0] += 1
+    return True
+
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
     """
     Aligns to the given bearing.
@@ -171,7 +192,7 @@ while True:
     img0_hsv = frame_processed["hsv"]
     img0_green = frame_processed["green"]
     img0_line = frame_processed["line"]
-
+    
     img0_binary_rescue = ((calibration_map_rescue * img0_gray > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
     img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
 
@@ -199,12 +220,27 @@ while True:
             img0_binary_rescue[:bottom_white_column:, x:x+segment_width] = 255
             img0_blurred[:bottom_white_column:, x:x+segment_width] = 255
 
-    rescue_mode = "victim"
-    
+    # -------------
+    # INITIAL ENTER
+    # -------------
+    if rescue_mode == "init":
+        # TODO: Optimally, this should try and use the ultrasonic sensor 
+        #       to get to a decent spot in the middle of the evac zone
+        # For now, just drive forward for a bit
+        m.run_tank_for_time(60, 60, 2000)
+
+        ball_found_qty = [0, 0]
+        rescue_mode = "victim"
+        continue
+
     # ------------
     # VICTIM STUFF
     # ------------
-    if rescue_mode == "victim":
+    elif rescue_mode == "victim":
+        if sum(ball_found_qty) >= 3:
+            print("Found all victims")
+            rescue_mode = "block"
+
         servo["cam"].angle = EVAC_CAM_ANGLE
         servo["lift"].angle = 40
         servo["claw"].angle = 0
@@ -272,49 +308,61 @@ while True:
                 cv2.circle(img0, (x, y), 2, (0, 255, 0), 3)
                 cv2.putText(img0, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
 
-            if len(sorted_circles) > 0:
-                lowest_circle = sorted_circles[0]
-                circle_check_counter = 0
+        # cv2.imshow("img0_blurred", img0_blurred)
+        # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
+        cv2.imshow("img0_binary_rescue", img0_binary_rescue)
+        cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
+        cv2.imshow("img0", img0)
 
-                # If the circle is +-100 pixels horizontally away from the centre, steer the robot towards it
-                if lowest_circle[0] < (img0.shape[1] / 2) - 100:
-                    print("Circle is to the left")
-                    m.run_tank_for_time(-40, 40, 50, False)
-                elif lowest_circle[0] > (img0.shape[1] / 2) + 100:
-                    print("Circle is to the right")
-                    m.run_tank_for_time(40, -40, 50, False)
-                else:
-                    last_circle_pos = lowest_circle
-                    print("Circle is in the centre-ish")
+        k = cv2.waitKey(1)
+        if (k & 0xFF == ord('q')):
+            # pr.print_stats(SortKey.TIME)
+            program_active = False
+            break
 
-                    THRESH_FINAL_APPROACH = 380
-                    if lowest_circle[1] > THRESH_FINAL_APPROACH:
-                        print("Approaching")
-                        approach_victim(1)
-                    m.run_tank_for_time(40, 40, 200)
+        if len(sorted_circles) > 0:
+            lowest_circle = sorted_circles[0]
+            circle_check_counter = 0
+
+            # If the circle is +-100 pixels horizontally away from the centre, steer the robot towards it
+            if lowest_circle[0] < (img0.shape[1] / 2) - 100:
+                print("Circle is to the left")
+                m.run_tank_for_time(-40, 40, 50, False)
+            elif lowest_circle[0] > (img0.shape[1] / 2) + 100:
+                print("Circle is to the right")
+                m.run_tank_for_time(40, -40, 50, False)
             else:
-                if last_circle_pos is not None and last_circle_pos[1] > 340:
-                    print("Approaching with extra distance")
-                    approach_victim(1.5)
+                last_circle_pos = lowest_circle
+                print("Circle is in the centre-ish")
+
+                THRESH_FINAL_APPROACH = 380
+                if lowest_circle[1] > THRESH_FINAL_APPROACH:
+                    print("Approaching")
+                    approach_victim(1)
+                m.run_tank_for_time(40, 40, 200)
+        else:
+            if last_circle_pos is not None and last_circle_pos[1] > 340:
+                print("Approaching with extra distance")
+                approach_victim(1.5)
+                continue
+            elif last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
+                # Did the circle vanish? Lets double check...
+                if circle_check_counter < 3:
+                    print("Circle may have vanished, double checking")
+                    circle_check_counter += 1
+                    time.sleep(0.3)
                     continue
-                elif last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
-                    # Did the circle vanish? Lets double check...
-                    if circle_check_counter < 3:
-                        print("Circle may have vanished, double checking")
-                        circle_check_counter += 1
-                        time.sleep(0.3)
-                        continue
-                    else:
-                        print("Circle vanished")
-                last_circle_pos = None
-                print("Rotating")
-                m.run_tank_for_time(40, -40, 300)
-                time.sleep(0.3)
+                else:
+                    print("Circle vanished")
+            last_circle_pos = None
+            print("Rotating")
+            m.run_tank_for_time(40, -40, 300)
+            time.sleep(0.3)
 
     # ------------------------
     # BLOCK FINDING AND RESCUE
     # ------------------------
-    if rescue_mode == "block":
+    elif rescue_mode == "block":
         # Find the contours of the rescue blocks
         img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
         img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
@@ -417,18 +465,18 @@ while True:
             servo["lift"].angle = -80
             servo["cam"].angle = EVAC_CAM_ANGLE
 
-    # cv2.imshow("img0_blurred", img0_blurred)
-    # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
-    cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
-    cv2.imshow("img0_binary_rescue", img0_binary_rescue)
-    cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
-    cv2.imshow("img0", img0)
+        # cv2.imshow("img0_blurred", img0_blurred)
+        # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
+        cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
+        cv2.imshow("img0_binary_rescue", img0_binary_rescue)
+        cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
+        cv2.imshow("img0", img0)
 
-    k = cv2.waitKey(1)
-    if (k & 0xFF == ord('q')):
-        # pr.print_stats(SortKey.TIME)
-        program_active = False
-        break
+        k = cv2.waitKey(1)
+        if (k & 0xFF == ord('q')):
+            # pr.print_stats(SortKey.TIME)
+            program_active = False
+            break
 
 m.stop_all()
 cam.stop()

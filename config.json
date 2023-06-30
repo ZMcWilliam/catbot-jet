@@ -22,6 +22,6 @@
         "maxRadius": 92,
         "heightBuffer": 345,
         "lowHeightMinRadius": 40,
-        "grayScaleMultiplier": 1.5
+        "grayScaleMultiplier": 1.7
     }
 }
