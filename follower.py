@@ -424,43 +424,44 @@ while program_active:
                     })
                     if len(followable_green) >= 2:
                         break # There should never be more than 2 followable green contours, so we can stop looking for more
-
-        if len(followable_green) >= 2 and turning:
-            followable_green.sort(key=lambda x: x["w_bounds"][0])
-            if turning == "LEFT":
-                # If we are turning left, we want the leftmost green contour
-                followable_green = followable_green[:1]
-            elif turning == "RIGHT":
-                # If we are turning right, we want the rightmost green contour
-                followable_green = followable_green[-1:]
             
         if len(followable_green) == 2 and not turning:
             # We have found 2 followable green contours, this means we need turn around 180 degrees
             # TODO
             print("DOUBLE GREEN")
             pass
-        elif len(followable_green) == 1:
-            selected = followable_green[0]
-            # Dilate selected["w"] to make it larger, and then use it as a mask
-            img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
-            cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
+        else:
+            if len(followable_green) >= 2 and turning:
+                followable_green.sort(key=lambda x: x["w_bounds"][0])
+                if turning == "LEFT":
+                    # If we are turning left, we want the leftmost green contour
+                    followable_green = followable_green[:1]
+                elif turning == "RIGHT":
+                    # If we are turning right, we want the rightmost green contour
+                    followable_green = followable_green[-1:]
 
-            # Mask the line image with the dilated white contour
-            img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
-            # Erode the line image to remove slight inconsistencies we don't want
-            img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
+            if len(followable_green) == 1:
+                selected = followable_green[0]
+                # Dilate selected["w"] to make it larger, and then use it as a mask
+                img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
+                cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
 
-            changed_img0_line = img0_line_new
+                # Mask the line image with the dilated white contour
+                img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
+                # Erode the line image to remove slight inconsistencies we don't want
+                img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
 
-            last_green_time = time.time()
-            if not turning:
-                # Based on the centre location of the white contour, we are either turning left or right
-                if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
-                    print("Start Turn: left")
-                    turning = "LEFT"
-                else:
-                    print("Start Turn: right")
-                    turning = "RIGHT"
+                changed_img0_line = img0_line_new
+
+                last_green_time = time.time()
+                if not turning:
+                    # Based on the centre location of the white contour, we are either turning left or right
+                    if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
+                        print("Start Turn: left")
+                        turning = "LEFT"
+                    else:
+                        print("Start Turn: right")
+                        turning = "RIGHT"
             
         if (changed_img0_line is not None):
             print("Green caused a change in the line")
