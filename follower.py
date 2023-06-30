@@ -77,6 +77,7 @@ config_values = {
 # ----------------
 # SYSTEM VARIABLES
 # ----------------
+program_active = True
 has_moved_windows = False
 program_sleep_time = 0.01
 
@@ -142,7 +143,14 @@ def exit_gracefully(signum = None, frame = None) -> None:
         signum (int, optional): Signal number. Defaults to None.
         frame (frame, optional): Current stack frame. Defaults to None.
     """
-    print("\n\nExiting Gracefully")
+    global program_active
+    if not program_active:
+        # We already tried to exit, but may have gotten stuck. Force the exit.
+        print("\nForcefully Exiting")
+        sys.exit()
+
+    print("\n\nExiting Gracefully\n")
+    program_active = False
     m.stop_all()
     cam.stop()
     cv2.destroyAllWindows()
@@ -282,7 +290,7 @@ print()
 # ---------
 # MAIN LOOP
 # ---------
-while True:
+while program_active:
     # ---------------
     # FRAME BALANCING
     # ---------------
