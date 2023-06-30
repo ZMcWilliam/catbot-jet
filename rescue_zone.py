@@ -130,6 +130,7 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000
 # MAIN LOOP
 program_sleep_time = 0.01 # Initial sleep time
 
+servo["cam"].angle = -80
 servo["lift"].angle = 40
 servo["claw"].angle = 0
 time.sleep(0.5)
@@ -174,130 +175,14 @@ while True:
     img0_binary_rescue = ((calibration_map_rescue * img0_gray > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
     img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
 
-    img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
-    img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
-    img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+    img0_binary_rescue_clean = img0_binary_rescue.copy()
 
-    contours_block = cv2.findContours(img0_binary_rescue_block, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-    contours_block = sorted(contours_block, key=cv2.contourArea, reverse=True)
-    if len(contours_block) > 0:
-        contour_block = contours_block[0]
-        if cv2.contourArea(contour_block) > 1000:
-            rect = cv2.minAreaRect(contour_block)
-            box = cv2.boxPoints(rect)
-            box = np.intp(box)
-            cv2.drawContours(img0, [box], 0, (0, 0, 255), 2)
-
-            # Get the centre of the block
-            M = cv2.moments(contour_block)
-            cx = int(M['m10']/M['m00'])
-            cy = int(M['m01']/M['m00'])
-            cv2.circle(img0, (cx, cy), 5, (0, 0, 255), -1)
-            
-            touches_bottom_edge = False
-            touches_left_edge = False
-            touches_right_edge = False
-            near_left_edge = False
-            near_right_edge = False
-            for point in box:
-                if point[1] > img0.shape[0]-10:
-                    touches_bottom_edge = True
-                if point[0] < 10:
-                    touches_left_edge = True
-                if point[0] < 70:
-                    near_left_edge = True
-                if point[0] > img0.shape[1]-10:
-                    touches_right_edge = True
-                if point[0] > img0.shape[1]-70:
-                    near_right_edge = True
-
-            if touches_bottom_edge:
-                m.run_tank(35, 35)
-                bottom_block_approach_counter += 1
-
-                if bottom_block_approach_counter > 30:
-                    print("Finished approach")
-                    m.run_tank_for_time(-40, -40, 1400)
-                    time.sleep(0.1)
-                    start_bearing = cmps.read_bearing_16bit()
-                    align_to_bearing(start_bearing - 180, 10, debug_prefix="EVAC Align - ")
-                    time.sleep(0.1)
-                    m.run_tank_for_time(-35, -35, 1000)
-                    servo["gate"].angle = 80
-                    time.sleep(0.5)
-                    for i in range(12):
-                        m.run_tank_for_time(35, 35, 100)
-                        m.run_tank_for_time(-50, -50, 100)
-                    servo["gate"].angle = -90
-                    m.run_tank_for_time(35, 35, 1000)
-                    time.sleep(1)
-
-                
-                m.run_tank_for_time(35, 35, 200)
-                print("Block on bottom - approach")
-            else:
-                bottom_block_approach_counter = 0
-                if (
-                    (near_left_edge and near_right_edge)
-                    or (
-                        abs(cx - (img0.shape[1]/2)) < 50
-                        and (touches_left_edge + touches_right_edge) != 1
-                    )
-                ):
-                    m.run_tank(35, 35)
-                    print("Block in middle - approach")
-                elif cx < (img0.shape[1]/2) or (touches_left_edge and not touches_right_edge):
-                    m.run_tank(10, 35)
-                    print("Block on left - turn left")
-                else:
-                    m.run_tank(35, 10)
-                    print("Block on right - turn right")
-    
-    servo["cam"].angle = EVAC_CAM_ANGLE
-    servo["lift"].angle = -80
-    servo["claw"].angle = -90
-
-    cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
-    cv2.imshow("img0_binary_rescue", img0_binary_rescue)
-    cv2.imshow("img0", img0)
-
-    k = cv2.waitKey(1)
-    if (k & 0xFF == ord('q')):
-        # pr.print_stats(SortKey.TIME)
-        program_active = False
-        break
-
-    continue
-    # ------------
-    # VICTIM STUFF
-    # ------------
-    servo["cam"].angle = EVAC_CAM_ANGLE
-    servo["lift"].angle = 40
-    servo["claw"].angle = 0
-
-    # minDist = min distance between circles
-    # param1 = high threshold for canny edge detection (sensitivity) - lower = more circles
-    # param2 = accumulator threshold for circle detection - Higher = more reliable circles, but may miss some
-    # minRadius = minimum radius of circle
-    # maxRadius = maximum radius of circle
     img0_gray_rescue_scaled = img0_gray * config_values["rescue_circle_conf"]["grayScaleMultiplier"]
     img0_gray_rescue_scaled = np.clip(img0_gray_rescue_scaled, 0, 255).astype(np.uint8)
 
     img0_blurred = cv2.medianBlur(img0_gray_rescue_scaled, 9)
 
-    # # Find the highest point of the image which has a full row of white pixels at least 10 pixels high
-    # top_white_row = -1
-    # for y in range(0, img0_binary_rescue.shape[0] - 10):
-    #     if np.all(img0_binary_rescue[y:y+10, :] == 255):
-    #         top_white_row = y
-    #         break
-
-    # # Set all pixels above this row to black
-    # if top_white_row != -1:
-    #     img0_binary_rescue[:top_white_row, :] = 0
-    #     img0_blurred[:top_white_row, :] = 0
-
-    segment_width = 30
+    segment_width = 40
 
     for x in range(0, img0_binary_rescue.shape[1], segment_width):
         segment = img0_binary_rescue[:, x:x+segment_width]
@@ -314,68 +199,229 @@ while True:
             img0_binary_rescue[:bottom_white_column:, x:x+segment_width] = 255
             img0_blurred[:bottom_white_column:, x:x+segment_width] = 255
 
-    circles = cv2.HoughCircles(img0_blurred, cv2.HOUGH_GRADIENT, **{
-        "dp": config_values["rescue_circle_conf"]["dp"],
-        "minDist": config_values["rescue_circle_conf"]["minDist"],
-        "param1": config_values["rescue_circle_conf"]["param1"],
-        "param2": config_values["rescue_circle_conf"]["param2"],
-        "minRadius": config_values["rescue_circle_conf"]["minRadius"],
-        "maxRadius": config_values["rescue_circle_conf"]["maxRadius"],
-    })
+    rescue_mode = "victim"
+    
+    # ------------
+    # VICTIM STUFF
+    # ------------
+    if rescue_mode == "victim":
+        servo["cam"].angle = EVAC_CAM_ANGLE
+        servo["lift"].angle = 40
+        servo["claw"].angle = 0
 
-    sorted_circles = []
-    if circles is not None:
-        # Round the circle parameters to integers
-        detected_circles = np.round(circles[0, :]).astype(int)
-        detected_circles = sorted(detected_circles , key = lambda v: [v[1], v[1]],reverse=True)
-        
-        # If the circle is in the bottom half of the image, check that the radius is greater than 40
-        # valid_circles = []
-        # for (x, y, r) in detected_circles:
-        #     if y > config_values["rescue_circle_conf"]["heightBuffer"] and r > config_values["rescue_circle_conf"]["lowHeightMinRadius"]:
-        #         valid_circles.append([x, y, r])
-        #     elif y <= config_values["rescue_circle_conf"]["heightBuffer"]:
-        #         valid_circles.append([x, y, r])
+        # minDist = min distance between circles
+        # param1 = high threshold for canny edge detection (sensitivity) - lower = more circles
+        # param2 = accumulator threshold for circle detection - Higher = more reliable circles, but may miss some
+        # minRadius = minimum radius of circle
+        # maxRadius = maximum radius of circle
+        circles = cv2.HoughCircles(img0_blurred, cv2.HOUGH_GRADIENT, **{
+            "dp": config_values["rescue_circle_conf"]["dp"],
+            "minDist": config_values["rescue_circle_conf"]["minDist"],
+            "param1": config_values["rescue_circle_conf"]["param1"],
+            "param2": config_values["rescue_circle_conf"]["param2"],
+            "minRadius": config_values["rescue_circle_conf"]["minRadius"],
+            "maxRadius": config_values["rescue_circle_conf"]["maxRadius"],
+        })
 
-        # Draw the detected circles on the original image
-        for (x, y, r) in detected_circles:
-            cv2.circle(img0, (x, y), r, (0, 0, 255), 2)
-            cv2.circle(img0, (x, y), 2, (0, 0, 255), 3)
-
-        height_bar_qty = 13
-        height_bar_minRadius = [a - 7 for a in [90, 85, 80, 72, 66, 58, 52, 44, 38, 31, 23, 16, 15]] # This could become a linear function... but it works for now
-        height_bar_maxRadius = [b + 20 for b in height_bar_minRadius]
-
-        height_bars = [(img0.shape[0] / height_bar_qty) * i for i in range(height_bar_qty - 1, -1, -1)]
-        height_bar_circles = [[] for i in range(height_bar_qty)]
-        for (x, y, r) in detected_circles:
-            for i in range(height_bar_qty):
-                if y >= height_bars[i]:
-                    if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]: 
-                        height_bar_circles[i].append([x, y, r, i])
-                    break
+        sorted_circles = []
+        if circles is not None:
+            # Round the circle parameters to integers
+            detected_circles = np.round(circles[0, :]).astype(int)
+            detected_circles = sorted(detected_circles , key = lambda v: [v[1], v[1]],reverse=True)
             
-            # Sort the circles in each bar by x position
-            height_bar_circles[i] = sorted(height_bar_circles[i], key = lambda v: [v[0], v[0]])
+            # If the circle is in the bottom half of the image, check that the radius is greater than 40
+            # valid_circles = []
+            # for (x, y, r) in detected_circles:
+            #     if y > config_values["rescue_circle_conf"]["heightBuffer"] and r > config_values["rescue_circle_conf"]["lowHeightMinRadius"]:
+            #         valid_circles.append([x, y, r])
+            #     elif y <= config_values["rescue_circle_conf"]["heightBuffer"]:
+            #         valid_circles.append([x, y, r])
 
-        # Compile circles into a single list, horizontally in height bar (closest to furthest)
-        for i in range(height_bar_qty):
-            sorted_circles += height_bar_circles[i]
+            # Draw the detected circles on the original image
+            for (x, y, r) in detected_circles:
+                cv2.circle(img0, (x, y), r, (0, 0, 255), 2)
+                cv2.circle(img0, (x, y), 2, (0, 0, 255), 3)
+
+            height_bar_qty = 13
+            height_bar_minRadius = [a - 7 for a in [90, 85, 80, 72, 66, 58, 52, 44, 38, 31, 23, 16, 15]] # This could become a linear function... but it works for now
+            height_bar_maxRadius = [b + 20 for b in height_bar_minRadius]
+
+            height_bars = [(img0.shape[0] / height_bar_qty) * i for i in range(height_bar_qty - 1, -1, -1)]
+            height_bar_circles = [[] for i in range(height_bar_qty)]
+            for (x, y, r) in detected_circles:
+                for i in range(height_bar_qty):
+                    if y >= height_bars[i]:
+                        if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]: 
+                            height_bar_circles[i].append([x, y, r, i])
+                        break
+                
+                # Sort the circles in each bar by x position
+                height_bar_circles[i] = sorted(height_bar_circles[i], key = lambda v: [v[0], v[0]])
+
+            # Compile circles into a single list, horizontally in height bar (closest to furthest)
+            for i in range(height_bar_qty):
+                sorted_circles += height_bar_circles[i]
+            
+            # Draw horizontal lines for height bars
+            for i in range(height_bar_qty):
+                cv2.line(img0, (0, int(height_bars[i])), (img0.shape[1], int(height_bars[i])), (255, 255, 255), 1)
+            
+            # Draw the sorted circles on the original image
+            for i, (x, y, r, bar) in enumerate(sorted_circles):
+                cv2.circle(img0, (x, y), r, (0, 255, 0), 2)
+                cv2.circle(img0, (x, y), 2, (0, 255, 0), 3)
+                cv2.putText(img0, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
+
+            if len(sorted_circles) > 0:
+                lowest_circle = sorted_circles[0]
+                circle_check_counter = 0
+
+                # If the circle is +-100 pixels horizontally away from the centre, steer the robot towards it
+                if lowest_circle[0] < (img0.shape[1] / 2) - 100:
+                    print("Circle is to the left")
+                    m.run_tank_for_time(-40, 40, 50, False)
+                elif lowest_circle[0] > (img0.shape[1] / 2) + 100:
+                    print("Circle is to the right")
+                    m.run_tank_for_time(40, -40, 50, False)
+                else:
+                    last_circle_pos = lowest_circle
+                    print("Circle is in the centre-ish")
+
+                    THRESH_FINAL_APPROACH = 380
+                    if lowest_circle[1] > THRESH_FINAL_APPROACH:
+                        print("Approaching")
+                        approach_victim(1)
+                    m.run_tank_for_time(40, 40, 200)
+            else:
+                if last_circle_pos is not None and last_circle_pos[1] > 340:
+                    print("Approaching with extra distance")
+                    approach_victim(1.5)
+                    continue
+                elif last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
+                    # Did the circle vanish? Lets double check...
+                    if circle_check_counter < 3:
+                        print("Circle may have vanished, double checking")
+                        circle_check_counter += 1
+                        time.sleep(0.3)
+                        continue
+                    else:
+                        print("Circle vanished")
+                last_circle_pos = None
+                print("Rotating")
+                m.run_tank_for_time(40, -40, 300)
+                time.sleep(0.3)
+
+    # ------------------------
+    # BLOCK FINDING AND RESCUE
+    # ------------------------
+    if rescue_mode == "block":
+        # Find the contours of the rescue blocks
+        img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
+        img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
+        img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+
+        contours_block = cv2.findContours(img0_binary_rescue_block, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
+        contours_block = [{
+            "contour": c, 
+            "contourArea": cv2.contourArea(c),
+            "boundingRect": cv2.boundingRect(c),
+            "touching_sides": [],
+            "near_sides": []
+        } for c in contours_block]
+
+        # Figure out which sides of the image the contours are touching
+        side_threshold = [10, 50]
+        for i, contour in enumerate(contours_block):
+            x, y, w, h = contour["boundingRect"]
+
+            if x < side_threshold[0]: contours_block[i]["touching_sides"].append("left")
+            if y < side_threshold[0]: contours_block[i]["touching_sides"].append("top")
+            if x + w > img0.shape[1] - side_threshold[0]: contours_block[i]["touching_sides"].append("right")
+            if y + h > img0.shape[0] - side_threshold[0]: contours_block[i]["touching_sides"].append("bottom")
+
+            if x < side_threshold[1]: contours_block[i]["near_sides"].append("left")
+            if y < side_threshold[1]: contours_block[i]["near_sides"].append("top")
+            if x + w > img0.shape[1] - side_threshold[1]: contours_block[i]["near_sides"].append("right")
+            if y + h > img0.shape[0] - side_threshold[1]: contours_block[i]["near_sides"].append("bottom")
         
-        # Draw horizontal lines for height bars
-        for i in range(height_bar_qty):
-            cv2.line(img0, (0, int(height_bars[i])), (img0.shape[1], int(height_bars[i])), (255, 255, 255), 1)
+        # Filter by area and ensure it doesn't touch the top
+        contours_block = [c for c in contours_block if c["contourArea"] > 10000 and "top" not in c["touching_sides"]]
         
-        # Draw the sorted circles on the original image
-        for i, (x, y, r, bar) in enumerate(sorted_circles):
-            cv2.circle(img0, (x, y), r, (0, 255, 0), 2)
-            cv2.circle(img0, (x, y), 2, (0, 255, 0), 3)
-            cv2.putText(img0, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
+        # Sort by area
+        contours_block = sorted(contours_block, key=lambda c: c["contourArea"], reverse=True)
+
+        cv2.drawContours(img0, [c["contour"] for c in contours_block], -1, (0, 0, 255), 2)
+        if len(contours_block) > 0:
+            contour_block = contours_block[0]
+
+            cv2.rectangle(img0, contour_block["boundingRect"], (0, 255, 0), 2)
+
+            cx = contour_block["boundingRect"][0] + contour_block["boundingRect"][2] / 2
+            cy = contour_block["boundingRect"][1] + contour_block["boundingRect"][3] / 2
+
+            cv2.circle(img0, (int(cx), int(cy)), 5, (0, 0, 255), -1)
+
+            if "bottom" in contour_block["touching_sides"]:
+                m.run_tank(35, 35)
+                bottom_block_approach_counter += 1
+
+                if bottom_block_approach_counter > 30:
+                    print("Finished approach")
+                    m.run_tank_for_time(-40, -40, 1400)
+                    time.sleep(0.1)
+                    start_bearing = cmps.read_bearing_16bit()
+                    align_to_bearing(start_bearing - 180, 10, debug_prefix="EVAC Align - ")
+                    time.sleep(0.1)
+                    m.run_tank_for_time(-35, -35, 1000)
+                    servo["gate"].angle = 70
+                    time.sleep(0.5)
+                    for i in range(12):
+                        m.run_tank_for_time(100, 100, 150)
+                        m.run_tank_for_time(-100, -100, 250)
+                    servo["gate"].angle = -90
+                    m.run_tank_for_time(35, 35, 1000)
+                    time.sleep(1)
+
+                
+                m.run_tank_for_time(35, 35, 200)
+                print("Block on bottom - approach")
+            else:
+                bottom_block_approach_counter = 0
+                if (
+                    ("left" in contour["near_sides"] and "right" in contour["near_sides"])
+                    or (
+                        abs(cx - (img0.shape[1]/2)) < 50
+                        and (("left" in contour_block["touching_sides"]) + ("right" in contour_block["touching_sides"])) != 1
+                    )
+                ):
+                    m.run_tank(35, 35)
+                    print("Block in middle - approach")
+                elif cx < (img0.shape[1]/2) or "left" in contour_block["touching_sides"]:
+                    m.run_tank(10, 35)
+                    print("Block on left - turn left")
+                else:
+                    m.run_tank(35, 10)
+                    print("Block on right - turn right")
+        else:
+            m.run_tank_for_time(35, -35, 100)
+        
+        servo["claw"].angle = -90
+
+        if servo["lift"].angle > -60:
+            # If the lift was down, give a bit of time before the camera moves
+            servo["cam"].angle = -80
+            servo["lift"].angle = -80
+            time.sleep(0.5)
+            servo["cam"].angle = EVAC_CAM_ANGLE
+        else:
+            servo["lift"].angle = -80
+            servo["cam"].angle = EVAC_CAM_ANGLE
 
     # cv2.imshow("img0_blurred", img0_blurred)
     # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
     cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
     cv2.imshow("img0_binary_rescue", img0_binary_rescue)
+    cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
     cv2.imshow("img0", img0)
 
     k = cv2.waitKey(1)
@@ -383,45 +429,6 @@ while True:
         # pr.print_stats(SortKey.TIME)
         program_active = False
         break
-
-    if len(sorted_circles) > 0:
-        lowest_circle = sorted_circles[0]
-        circle_check_counter = 0
-
-        # If the circle is +-100 pixels horizontally away from the centre, steer the robot towards it
-        if lowest_circle[0] < (img0.shape[1] / 2) - 100:
-            print("Circle is to the left")
-            m.run_tank_for_time(-40, 40, 50, False)
-        elif lowest_circle[0] > (img0.shape[1] / 2) + 100:
-            print("Circle is to the right")
-            m.run_tank_for_time(40, -40, 50, False)
-        else:
-            last_circle_pos = lowest_circle
-            print("Circle is in the centre-ish")
-
-            THRESH_FINAL_APPROACH = 380
-            if lowest_circle[1] > THRESH_FINAL_APPROACH:
-                print("Approaching")
-                approach_victim(1)
-            m.run_tank_for_time(40, 40, 200)
-    else:
-        if last_circle_pos is not None and last_circle_pos[1] > 340:
-            print("Approaching with extra distance")
-            approach_victim(1.5)
-            continue
-        elif last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
-            # Did the circle vanish? Lets double check...
-            if circle_check_counter < 3:
-                print("Circle may have vanished, double checking")
-                circle_check_counter += 1
-                time.sleep(0.3)
-                continue
-            else:
-                print("Circle vanished")
-        last_circle_pos = None
-        print("Rotating")
-        m.run_tank_for_time(40, -40, 300)
-        time.sleep(0.3)
 
 m.stop_all()
 cam.stop()
