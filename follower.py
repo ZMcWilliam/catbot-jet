@@ -164,6 +164,42 @@ def exit_gracefully(signum = None, frame = None) -> None:
 
 signal.signal(signal.SIGINT, exit_gracefully)
 
+def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
+    """
+    Aligns to the given bearing.
+
+    Args:
+        target_bearing (int): The bearing to align to.
+        cutoff_error (int): The error threshold to stop aligning.
+        timeout (int, optional): The timeout in seconds. Defaults to 10.
+        debug_prefix (str, optional): The debug prefix to use. Defaults to "".
+    """
+    # Restrict target_bearing to 0-359
+    target_bearing = target_bearing % 360
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        current_bearing = cmps.read_bearing_16bit()
+        error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+        if error < cutoff_error:
+            print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
+            m.stop_all()
+            return True
+        
+        max_speed = 50 # Speed to rotate when error is 180
+        min_speed = 25 # Speed to rotate when error is 0
+
+        rotate_speed = min_speed + ((max_speed - min_speed)/math.sqrt(180)) * math.sqrt(error)
+
+        # Rotate in the direction closest to the bearing
+        if (current_bearing - target_bearing) % 360 < 180:
+            m.run_tank(-rotate_speed, rotate_speed)
+        else:
+            m.run_tank(rotate_speed, -rotate_speed)
+
+        print(f"{debug_prefix}Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}\tSpeed: {rotate_speed}")
+
 # ------------------
 # OBSTACLE AVOIDANCE
 # ------------------
@@ -193,8 +229,23 @@ def avoid_obstacle() -> None:
             print(f"{debug_prefix}Side Distance: {side_dist}")
             
             if check_for_line:
-                # TODO Check for line using camera
-                pass
+                if cam.is_halted():
+                    print(f"{debug_prefix}Camera is halted... Waiting")
+                    m.stop_all()
+                    time.sleep(0.1)
+                    timeout += 0.1 # Extend the timeout, we didn't intend for the camera to be halted, so it shouldn't count.
+                    continue
+                
+                changed_black_contour = False
+                frame_processed = cam.read_stream_processed()
+
+                img0_line_not = cv2.bitwise_not(frame_processed["line"])
+                black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
+
+                if len(black_contours_filtered) >= 1:
+                    print(f"{debug_prefix}Found Line")
+                    return True
                 
             # Check if the side ultrasonic sensor sees something within the requested range, and return if so
             if less_than and side_dist < distance:
@@ -202,43 +253,6 @@ def avoid_obstacle() -> None:
             elif not less_than and side_dist >= distance:
                 return False
         return False
-
-    def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
-        """
-        Obstacle avoidance helper:
-        Aligns to the given bearing.
-
-        Args:
-            target_bearing (int): The bearing to align to.
-            cutoff_error (int): The error threshold to stop aligning.
-            timeout (int, optional): The timeout in seconds. Defaults to 10.
-            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
-        """
-        # Restrict target_bearing to 0-359
-        target_bearing = target_bearing % 360
-
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            current_bearing = cmps.read_bearing_16bit()
-            error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
-
-            if error < cutoff_error:
-                print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
-                m.stop_all()
-                return True
-            
-            max_speed = 50 # Speed to rotate when error is 180
-            min_speed = 25 # Speed to rotate when error is 0
-
-            rotate_speed = min_speed + ((max_speed - min_speed)/math.sqrt(180)) * math.sqrt(error)
-
-            # Rotate in the direction closest to the bearing
-            if (current_bearing - target_bearing) % 360 < 180:
-                m.run_tank(-rotate_speed, rotate_speed)
-            else:
-                m.run_tank(rotate_speed, -rotate_speed)
-
-            print(f"{debug_prefix}Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}\tSpeed: {rotate_speed}")
 
     m.run_tank_for_time(-40, -40, 500)
 
