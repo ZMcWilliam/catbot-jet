@@ -26,6 +26,8 @@ import helper_motorkit as m
 import helper_intersections
 from helper_cmps14 import CMPS14
 
+DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
+
 # ------------
 # DEVICE PORTS
 # ------------
@@ -123,7 +125,7 @@ servo = {
     "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-71)       # -90=Down, 90=Up
 }
 
-debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True)
+debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
 
 USS = {
     key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
@@ -163,6 +165,15 @@ def exit_gracefully(signum = None, frame = None) -> None:
     sys.exit()
 
 signal.signal(signal.SIGINT, exit_gracefully)
+
+def debug_state() -> bool:
+    """
+    Returns the current debugger state
+
+    Returns:
+        bool: False for OFF, True for ON
+    """
+    return DEBUGGER and debug_switch.value
 
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
     """
@@ -507,7 +518,7 @@ while program_active:
     # STOP ON RED CHECK
     # -----------------
     # Since red is rare, and only occurs at the very end of the course, only check for it every 5 frames
-    if frames % (1 if debug_switch.value else 5) == 0 or red_stop_check > 0:
+    if frames % (1 if debug_state() else 5) == 0 or red_stop_check > 0:
         img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
         img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
 
@@ -877,7 +888,7 @@ while program_active:
     # ----------
 
     print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}")
-    if debug_switch.value:
+    if debug_state():
         # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
         # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
         # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
