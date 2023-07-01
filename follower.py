@@ -441,9 +441,14 @@ while program_active:
             
         if len(followable_green) == 2 and not turning:
             # We have found 2 followable green contours, this means we need turn around 180 degrees
-            # TODO
+            # TODO: Check this (plane code go brr) & Add some checks to make sure we actually want to turn around?
             print("DOUBLE GREEN")
-            pass
+            m.run_tank_for_time(40, 40, 1000)
+            start_bearing = cmps.read_bearing_16bit()
+            align_to_bearing(start_bearing - 180, 10, debug_prefix="Double Green Rotate - ")
+            m.run_tank_for_time(40, 40, 200)
+            turning = "RIGHT" # Arbitrarily make it right for now... It is very possible this won't work
+            continue
         else:
             if len(followable_green) >= 2 and turning:
                 followable_green.sort(key=lambda x: x["w_bounds"][0])
