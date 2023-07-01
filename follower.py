@@ -301,6 +301,12 @@ for i in range(3, 0, -1):
 print("\033[K")
 print()
 
+# Ensure frames have been processed at least once
+if cam.read_stream_processed()["raw"] is None:
+    print("Waiting for first frame")
+    while cam.read_stream_processed()["raw"] is None:
+        time.sleep(0.1)
+
 # ---------
 # MAIN LOOP
 # ---------
@@ -355,9 +361,6 @@ while program_active:
     
     changed_black_contour = False
     frame_processed = cam.read_stream_processed()
-    if (frame_processed is None or frame_processed["resized"] is None):
-        print("Waiting for image...")
-        continue
     
     # We need to .copy() the images because we are going to be modifying them
     # This prevents us from reading a modified image on the next loop, and things breaking
