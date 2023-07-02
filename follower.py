@@ -88,6 +88,7 @@ last_line_pos = np.array([100,100])
 
 turning = None
 last_green_time = 0
+initial_green_time = 0
 changed_black_contour = False
 current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
@@ -122,7 +123,7 @@ servo = {
     "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
     "claw": gpiozero.AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
     "lift": gpiozero.AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
-    "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-71)       # -90=Down, 90=Up
+    "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-64)       # -90=Down, 90=Up
 }
 
 debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
@@ -455,7 +456,6 @@ while program_active:
             
         if len(followable_green) == 2 and not turning:
             # We have found 2 followable green contours, this means we need turn around 180 degrees
-            # TODO: Check this (plane code go brr) & Add some checks to make sure we actually want to turn around?
             print("DOUBLE GREEN")
             m.run_tank_for_time(40, 40, 1000)
             start_bearing = cmps.read_bearing_16bit()
@@ -474,27 +474,35 @@ while program_active:
                     followable_green = followable_green[-1:]
 
             if len(followable_green) == 1:
-                selected = followable_green[0]
-                # Dilate selected["w"] to make it larger, and then use it as a mask
-                img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
-                cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
-
-                # Mask the line image with the dilated white contour
-                img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
-                # Erode the line image to remove slight inconsistencies we don't want
-                img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
-
-                changed_img0_line = img0_line_new
-
-                last_green_time = time.time()
+                can_follow_green = True
                 if not turning:
-                    # Based on the centre location of the white contour, we are either turning left or right
-                    if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
-                        print("Start Turn: left")
-                        turning = "LEFT"
-                    else:
-                        print("Start Turn: right")
-                        turning = "RIGHT"
+                    # With double green, we may briefly see only 1 green contour while entering. 
+                    # Hence, add some delay to when we start turning to prevent this and ensure we can see all green contours
+                    if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
+                    if time.time() - initial_green_time < 0.3: can_follow_green = False
+                
+                if can_follow_green:
+                    selected = followable_green[0]
+                    # Dilate selected["w"] to make it larger, and then use it as a mask
+                    img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
+                    cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
+
+                    # Mask the line image with the dilated white contour
+                    img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
+                    # Erode the line image to remove slight inconsistencies we don't want
+                    img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
+
+                    changed_img0_line = img0_line_new
+
+                    last_green_time = time.time()
+                    if not turning:
+                        # Based on the centre location of the white contour, we are either turning left or right
+                        if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
+                            print("Start Turn: left")
+                            turning = "LEFT"
+                        else:
+                            print("Start Turn: right")
+                            turning = "RIGHT"
             
         if (changed_img0_line is not None):
             print("Green caused a change in the line")
