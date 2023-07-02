@@ -17,11 +17,20 @@ sudo pigpiod
 sudo systemctl enable pigpiod
 ```
 
-## Set Display Size
+## Set display size
 CatBot's display has been adjusted so that we can see more content. \
 Add the following line to the end of `/etc/xdg/lxsession/LXDE-pi/autostart`
 ```
 @xrandr --output DSI-1 --scale 2x2
+```
+
+## Auto start on boot
+To start CatBot on boot, create `~/.config/autostart/catbot.desktop` with the following content:
+```
+[Desktop Entry]
+Type=Application
+Name=CatBot Launcher
+Exec=/bin/bash /home/pi/Desktop/CatBot/launcher.sh
 ```
 
 ## Overclocking
@@ -31,6 +40,6 @@ over_voltage=6
 arm_freq=2000
 ```
 
-## Other Notes:
+## Other notes:
 - i2c settings: See [NOTE-i2c.md](NOTE-i2c.md)
 - CMPS14 settings: See [NOTE-cmps14.md](NOTE-cmps14.md)
