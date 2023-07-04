@@ -176,7 +176,7 @@ def debug_state() -> bool:
     """
     return DEBUGGER and debug_switch.value
 
-def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 1000, debug_prefix: str = "") -> bool:
+def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
     """
     Aligns to the given bearing.
 
