@@ -59,7 +59,7 @@ KI = 0                              # Integral gain
 KD = 0.08                           # Derivative gain
 
 follower_speed = 40                 # Base speed of the line follower
-obstacle_treshold = 5               # Minimum distance treshold for obstacles (cm)
+obstacle_treshold = 9               # Minimum distance treshold for obstacles (cm)
 
 # ---------------------
 # LOAD STORED JSON DATA
@@ -218,84 +218,36 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
 def avoid_obstacle() -> None:
     """
     Performs obstacle avoidance when an obstacle is detected.
+
+    This uses a very basic metho of just rotating a fixed speed around the obstacle until a line is detected.
+    It will not work for varying sizes of obstacles, and hence should be worked on if time permits, but it's fine for now.
     """
-    side_distance_threshold = 30 # Distance threshold for the side ultrasonic sensor to detect an obstacle
+    m.run_tank_for_time(-40, -40, 900)
+    align_to_bearing(cmps.read_bearing_16bit() - 90, 1, debug_prefix="OBSTACLE ALIGN: ")
+    time.sleep(0.2)
+    m.run_tank(100, 32)
+    time.sleep(1) # Threshold before accepting any possibility of a line
+
+    # Start checking for a line while continuing to rotate around the obstacle
+    while True:
+        if cam.is_halted():
+            print("[OBSTACLE] Camera is halted... Waiting")
+            m.stop_all()
+            time.sleep(0.1)
+            continue
+        
+        frame_processed = cam.read_stream_processed()
+
+        img0_line_not = cv2.bitwise_not(frame_processed["line"])
+        black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
+
+        if len(black_contours_filtered) >= 1:
+            print("[OBSTACLE] Found Line")
+            break
     
-    def forward_until(distance: int, less_than: bool, check_for_line: bool = False, timeout: int = 10, debug_prefix: str = "") -> bool:
-        """
-        Obstacle avoidance helper:
-        Goes forward until the side ultrasonic sensor sees something less than the given distance.
-        Allows for checking for the existence of a line while going forward.
-
-        Args:
-            distance (int): The distance threshold for the side ultrasonic sensor to detect an obstacle.
-            less_than (bool): Flag indicating whether to check for a distance less than or greater than the given distance.
-            check_for_line (bool, optional): Flag indicating whether to check for a line while going forward. Defaults to False.
-            timeout (int, optional): The timeout in seconds. Defaults to 10.
-            debug_prefix (str, optional): The debug prefix to use. Defaults to "".
-        """
-        m.run_tank(30, 30)
-        start_time = time.time()
-        while time.time() - start_time < timeout:
-            side_dist = USS["front"].distance * 100
-            print(f"{debug_prefix}Side Distance: {side_dist}")
-            
-            if check_for_line:
-                if cam.is_halted():
-                    print(f"{debug_prefix}Camera is halted... Waiting")
-                    m.stop_all()
-                    time.sleep(0.1)
-                    timeout += 0.1 # Extend the timeout, we didn't intend for the camera to be halted, so it shouldn't count.
-                    continue
-                
-                changed_black_contour = False
-                frame_processed = cam.read_stream_processed()
-
-                img0_line_not = cv2.bitwise_not(frame_processed["line"])
-                black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
-
-                if len(black_contours_filtered) >= 1:
-                    print(f"{debug_prefix}Found Line")
-                    return True
-                
-            # Check if the side ultrasonic sensor sees something within the requested range, and return if so
-            if less_than and side_dist < distance:
-                return False
-            elif not less_than and side_dist >= distance:
-                return False
-        return False
-
-    m.run_tank_for_time(-40, -40, 500)
-
-    start_bearing = cmps.read_bearing_16bit()
-
-    align_to_bearing(start_bearing - 90, 1, debug_prefix="STEP 1 - ")
-
-    turn_count = 0
-    while turn_count < 4:
-        m.run_tank(30, 30)
-        # Go forward until side ultrasonic sees something less than 30cm 
-        # After the second turn, check for a line while going forward
-        if forward_until(side_distance_threshold, less_than=True, check_for_line=turn_count >= 2, debug_prefix="STEP A, TURN " + str(turn_count) + " - "):
-            break # Found a line
-        print("Found obstacle")
-        
-        # Keep going forward until side ultrasonic no longer sees object
-        if forward_until(side_distance_threshold, less_than=False, check_for_line=turn_count >= 2, debug_prefix="STEP B, TURN " + str(turn_count) + " - "):
-            break # Found a line
-        print("Lost obstacle")
-
-        # Did not find a line, so keep going forward a bit, turn right, and try again
-        m.run_tank_for_time(25, 25, 900)
-        align_to_bearing(start_bearing + (90 * turn_count), 1, debug_prefix="STEP C, TURN " + str(turn_count) + " - ") # 90 degree right turn
-        turn_count += 1
-        
-        time.sleep(0.5)
-
-    # We found the line, now reconnect and follow it
     m.stop_all()
-    time.sleep(3)
+    time.sleep(0.2)
 
 # ------------------------
 # WAIT FOR VISION TO START
