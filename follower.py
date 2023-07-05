@@ -876,39 +876,38 @@ while program_active:
     # STOP ON RED CHECK
     # -----------------
     # Since red is rare, and only occurs at the very end of the course, only check for it every 5 frames
-    if frames % (1 if debug_state() else 5) == 0 or red_stop_check > 0:
-        img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
-        img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+    img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
+    img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
 
-        red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
-        red_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
-        red_contours_filtered = [contour[0] for contour in red_contours if contour[1] > 20000]
+    red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
+    red_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
+    red_contours_filtered = [contour[0] for contour in red_contours if contour[1] > 20000]
 
-        if len(red_contours_filtered) > 0:
-            edges = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(red_contours_filtered[0]), img0_binary.shape))
-            if edges == ["left", "right"]:
-                m.stop_all()
-                red_stop_check += 1
-                print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
+    if len(red_contours_filtered) > 0:
+        edges = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(red_contours_filtered[0]), img0_binary.shape))
+        if edges == ["left", "right"]:
+            m.stop_all()
+            red_stop_check += 1
+            print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
 
-                if red_stop_check == 1:
-                    time.sleep(0.1)
-                    m.run_tank_for_time(-40, -40, 100)
-                    time.sleep(0.1)
+            if red_stop_check == 1:
+                time.sleep(0.1)
+                m.run_tank_for_time(-40, -40, 100)
+                time.sleep(0.1)
 
-                time.sleep(7)
+            time.sleep(7)
 
-                if debug_state():
-                    cv2.imshow("img0_red", img0_red)
-                    cv2.waitKey(1)
-                    
-                if red_stop_check > 3:
-                    print("DETECTED RED STOP 3 TIMES, STOPPING")
-                    break
+            if debug_state():
+                cv2.imshow("img0_red", img0_red)
+                cv2.waitKey(1)
+                
+            if red_stop_check > 3:
+                print("DETECTED RED STOP 3 TIMES, STOPPING")
+                break
 
-                continue # Don't run the rest of the follower, we don't really want to move forward in case we accidentally loose the red...
-            else:
-                red_stop_check = 0
+            continue # Don't run the rest of the follower, we don't really want to move forward in case we accidentally loose the red...
+        else:
+            red_stop_check = 0
 
     # -------------
     # INTERSECTIONS
