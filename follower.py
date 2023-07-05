@@ -1203,11 +1203,13 @@ while program_active:
         m.run_steer(follower_speed, 100, current_steering)
 
         preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-        cv2.imshow("img0 - NBC", preview_image_img0)
-        k = cv2.waitKey(1)
-        if (k & 0xFF == ord('q')):
-            program_active = False
-            break
+        
+        if debug_state():
+            cv2.imshow("img0 - NBC", preview_image_img0)
+            k = cv2.waitKey(1)
+            if (k & 0xFF == ord('q')):
+                program_active = False
+                break
         continue
     chosen_black_contour = sorted_black_contours[0]
     
