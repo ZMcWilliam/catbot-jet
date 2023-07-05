@@ -26,7 +26,7 @@ import helper_motorkit as m
 import helper_intersections
 from helper_cmps14 import CMPS14
 
-DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
+DEBUGGER = False # Should the debug switch actually work? This should be set to false if using the runner
 
 # ------------
 # DEVICE PORTS
