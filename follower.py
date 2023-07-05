@@ -61,19 +61,26 @@ KD = 0.08                           # Derivative gain
 follower_speed = 40                 # Base speed of the line follower
 obstacle_treshold = 9               # Minimum distance treshold for obstacles (cm)
 
+evac_cam_angle = 7                  # Angle of the camera when evacuating
+
 # ---------------------
 # LOAD STORED JSON DATA
 # ---------------------
 with open("calibration.json", "r") as json_file:
     calibration_data = json.load(json_file)
+calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
+calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
+
 with open("config.json", "r") as json_file:
     config_data = json.load(json_file)
 
-calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
+    "black_rescue_threshold": config_data["black_rescue_threshold"],
+    "rescue_circle_conf": config_data["rescue_circle_conf"],
     "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]],
     "red_hsv_threshold": [np.array(bound) for bound in config_data["red_hsv_threshold"]],
+    "rescue_block_hsv_threshold": [np.array(bound) for bound in config_data["rescue_block_hsv_threshold"]]
 }
 
 # ----------------
