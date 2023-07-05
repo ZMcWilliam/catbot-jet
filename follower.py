@@ -879,13 +879,20 @@ while program_active:
         if len(red_contours_filtered) > 0:
             edges = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(red_contours_filtered[0]), img0_binary.shape))
             if edges == ["left", "right"]:
-                print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
                 m.stop_all()
                 red_stop_check += 1
-                time.sleep(1)
+                print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
 
-                cv2.imshow("img0_red", img0_red)
-                cv2.waitKey(1)
+                if red_stop_check == 1:
+                    time.sleep(0.1)
+                    m.run_tank_for_time(-40, -40, 100)
+                    time.sleep(0.1)
+
+                time.sleep(7)
+
+                if debug_state():
+                    cv2.imshow("img0_red", img0_red)
+                    cv2.waitKey(1)
                     
                 if red_stop_check > 3:
                     print("DETECTED RED STOP 3 TIMES, STOPPING")
