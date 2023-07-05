@@ -93,6 +93,7 @@ changed_black_contour = False
 current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
 red_stop_check = 0
+evac_detect_check = 0
 
 pid_last_error = 0
 pid_integral = 0
@@ -1058,6 +1059,34 @@ while program_active:
             
             # Get the edges that the contour not relevant to the closest points touches
             edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
+
+            # --------------
+            # EVAC DETECTION
+            # --------------
+            # This is a janky solution to detecting evac entry... it should work for now, but definitely should be looked at.
+            if len(black_contours) >= 1 and edges_big == ["left", "right", "top"]:
+                edges_black = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(black_contours[0], 0.03), img0_binary.shape))
+                
+                if edges_black == ["bottom", "left", "right"]:
+                    m.stop_all()
+                    evac_detect_check += 1
+                    print(f"EVACUATION ZONE DETECTED: {evac_detect_check}/3")
+
+                    if evac_detect_check == 1:
+                        time.sleep(0.1)
+                        m.run_tank_for_time(-40, -40, 100)
+                        time.sleep(0.1)
+
+                    if evac_detect_check >= 3:
+                        print("STARTING EVAC")
+                        run_evac()
+                    
+                    time.sleep(0.1)
+                    continue
+            
+            evac_detect_check = 0
+
+            # --- Rest of 3WC Intersections
 
             # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
             cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])
