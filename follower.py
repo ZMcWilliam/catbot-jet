@@ -55,11 +55,11 @@ error_weight = 0.5                  # Weight of the error value when calculating
 angle_weight = 1-error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
 
-KP = 1.1                            # Proportional gain
+KP = 1.3                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.08                           # Derivative gain
 
-follower_speed = 40                 # Base speed of the line follower
+follower_speed = 45                 # Base speed of the line follower
 obstacle_treshold = 9               # Minimum distance treshold for obstacles (cm)
 
 evac_cam_angle = 7                  # Angle of the camera when evacuating
@@ -81,7 +81,10 @@ config_values = {
     "rescue_circle_conf": config_data["rescue_circle_conf"],
     "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]],
     "red_hsv_threshold": [np.array(bound) for bound in config_data["red_hsv_threshold"]],
-    "rescue_block_hsv_threshold": [np.array(bound) for bound in config_data["rescue_block_hsv_threshold"]]
+    "obstacle_hsv_threshold": [np.array(bound) for bound in config_data["obstacle_hsv_threshold"]],
+    "rescue_block_hsv_threshold": [np.array(bound) for bound in config_data["rescue_block_hsv_threshold"]],
+    "rescue_circle_minradius_offset": config_data["rescue_circle_minradius_offset"],
+    "rescue_binary_gray_scale_multiplier": config_data["rescue_binary_gray_scale_multiplier"]
 }
 
 # ----------------
@@ -118,6 +121,13 @@ ball_found_qty = [0, 0] # Silver, Black
 last_circle_pos = None
 circle_check_counter = 0
 bottom_block_approach_counter = 0
+
+time_since_ramp_start = 0
+time_ramp_end = 0
+
+# Choose a random side for the obstacle in case the first direction is not possible
+# A proper check should be added, but this is a quick fix for now
+obstacle_dir = np.random.choice([-1, 1])
 
 # ------------------
 # INITIALISE DEVICES
@@ -183,13 +193,19 @@ def exit_gracefully(signum = None, frame = None) -> None:
 
 signal.signal(signal.SIGINT, exit_gracefully)
 
-def debug_state() -> bool:
+def debug_state(mode=None) -> bool:
     """
     Returns the current debugger state
+
+    Args:
+        mode (str, optional): The type of debugger. Defaults to None.
 
     Returns:
         bool: False for OFF, True for ON
     """
+    if mode == "rescue": 
+        return True
+    
     return DEBUGGER and debug_switch.value
 
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
@@ -238,10 +254,49 @@ def avoid_obstacle() -> None:
     This uses a very basic metho of just rotating a fixed speed around the obstacle until a line is detected.
     It will not work for varying sizes of obstacles, and hence should be worked on if time permits, but it's fine for now.
     """
+    global obstacle_dir
+    
+    # Check if it's actually an obstacle by using the camera        changed_black_contour = False
+    frame_processed = cam.read_stream_processed()
+    while (frame_processed is None or frame_processed["resized"] is None):
+        print("Waiting for image...")
+        time.sleep(0.1)
+
+    while cam.is_halted():
+        print("Camera is halted... Waiting")
+        m.stop_all()
+        time.sleep(0.1)
+
+    img0_hsv = frame_processed["hsv"]
+
+    img0_obstacle = cv2.inRange(img0_hsv, config_values["obstacle_hsv_threshold"][0], config_values["obstacle_hsv_threshold"][1])
+    img0_obstacle = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+
+    obstacle_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_obstacle, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
+    obstacle_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
+    obstacle_contours_filtered = [contour[0] for contour in obstacle_contours if contour[1] > 10000]
+
+    if len(obstacle_contours_filtered) == 0:
+        # EVACUATION ZONE PROBABLY
+        print("DETECTED EVAC")
+        m.run_tank_for_time(-40, -40, 500)
+        
+        time.sleep(2)
+        # Random rotate dir
+        evac_rotate_dir = np.random.choice([-1, 1])
+        align_to_bearing(cmps.read_bearing_16bit() - (70 * evac_rotate_dir), 1, debug_prefix="EVAC ROTATE: ")
+        time.sleep(1)
+        print("STARTING EVAC")
+        run_evac()
+
+    # Avoid the obstacle
+    
+    obstacle_dir = -1 if obstacle_dir == 1 else 1
     m.run_tank_for_time(-40, -40, 900)
-    align_to_bearing(cmps.read_bearing_16bit() - 90, 1, debug_prefix="OBSTACLE ALIGN: ")
+    align_to_bearing(cmps.read_bearing_16bit() - (90 * obstacle_dir), 1, debug_prefix="OBSTACLE ALIGN: ")
     time.sleep(0.2)
-    m.run_tank(100, 32)
+    if obstacle_dir > 0: m.run_tank(100, 32)
+    else: m.run_tank(32, 100)
     time.sleep(1) # Threshold before accepting any possibility of a line
 
     # Start checking for a line while continuing to rotate around the obstacle
@@ -319,12 +374,6 @@ def run_evac():
     global circle_check_counter
     global bottom_block_approach_counter
 
-    servo["cam"].angle = -80
-    servo["lift"].angle = 40
-    servo["claw"].angle = 0
-    time.sleep(0.5)
-    servo["cam"].angle = evac_cam_angle
-
     while True:
         # time.sleep(program_sleep_time)
         frames += 1
@@ -362,13 +411,15 @@ def run_evac():
         img0_green = frame_processed["green"]
         img0_line = frame_processed["line"]
         
-        img0_binary_rescue = ((calibration_map_rescue * img0_gray > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
-        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+        
+        img0_gray_rescue_calibrated = calibration_map_rescue * img0_gray
+        img0_binary_rescue = ((img0_gray_rescue_calibrated > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
+        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+
+        img0_gray_rescue_scaled = img0_gray_rescue_calibrated * (config_values["rescue_binary_gray_scale_multiplier"] - 2.5)
+        img0_gray_rescue_scaled = np.clip(img0_gray_rescue_calibrated, 0, 255).astype(np.uint8)
 
         img0_binary_rescue_clean = img0_binary_rescue.copy()
-
-        img0_gray_rescue_scaled = img0_gray * config_values["rescue_circle_conf"]["grayScaleMultiplier"]
-        img0_gray_rescue_scaled = np.clip(img0_gray_rescue_scaled, 0, 255).astype(np.uint8)
 
         img0_blurred = cv2.medianBlur(img0_gray_rescue_scaled, 9)
 
@@ -396,7 +447,19 @@ def run_evac():
             # TODO: Optimally, this should try and use the ultrasonic sensor 
             #       to get to a decent spot in the middle of the evac zone
             # For now, just drive forward for a bit
-            m.run_tank_for_time(60, 60, 2000)
+            m.run_tank_for_time(60, 60, 1500)
+            
+            # Spin around to try and get us off any wall
+            align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
+            align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
+
+            servo["cam"].angle = -80
+            servo["lift"].angle = 40
+            servo["claw"].angle = 0
+            time.sleep(0.5)
+            servo["cam"].angle = evac_cam_angle
+            time.sleep(0.5)
+            m.run_tank_for_time(60, 60, 1000)
 
             ball_found_qty = [0, 0]
             rescue_mode = "victim"
@@ -450,7 +513,7 @@ def run_evac():
 
                 height_bar_qty = 13
                 height_bar_minRadius = [a - 7 for a in [90, 85, 80, 72, 66, 58, 52, 44, 38, 31, 23, 16, 15]] # This could become a linear function... but it works for now
-                height_bar_maxRadius = [b + 20 for b in height_bar_minRadius]
+                height_bar_maxRadius = [b + config_values["rescue_circle_minradius_offset"] for b in height_bar_minRadius]
 
                 height_bars = [(img0.shape[0] / height_bar_qty) * i for i in range(height_bar_qty - 1, -1, -1)]
                 height_bar_circles = [[] for i in range(height_bar_qty)]
@@ -478,7 +541,7 @@ def run_evac():
                     cv2.circle(img0, (x, y), 2, (0, 255, 0), 3)
                     cv2.putText(img0, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
 
-            if debug_state():
+            if debug_state("rescue"):
                 # cv2.imshow("img0_blurred", img0_blurred)
                 # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
                 cv2.imshow("img0_binary_rescue", img0_binary_rescue)
@@ -580,6 +643,10 @@ def run_evac():
 
                 cv2.circle(img0, (int(cx), int(cy)), 5, (0, 0, 255), -1)
 
+                front_dist = USS["front"].distance * 100
+                if front_dist <= 5 and front_dist != 0:
+                    bottom_block_approach_counter += 5
+
                 if "bottom" in contour_block["touching_sides"]:
                     m.run_tank(35, 35)
                     bottom_block_approach_counter += 1
@@ -604,7 +671,10 @@ def run_evac():
                     m.run_tank_for_time(35, 35, 200)
                     print("Block on bottom - approach")
                 else:
-                    bottom_block_approach_counter = 0
+                    if front_dist <= 5 and front_dist != 0:
+                        print("Block is nearby")
+                    else:
+                        bottom_block_approach_counter = 0
                     if (
                         ("left" in contour["near_sides"] and "right" in contour["near_sides"])
                         or (
@@ -635,7 +705,7 @@ def run_evac():
                 servo["lift"].angle = -80
                 servo["cam"].angle = evac_cam_angle
 
-            if debug_state():
+            if debug_state("rescue"):
                 # cv2.imshow("img0_blurred", img0_blurred)
                 # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
                 cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
@@ -809,7 +879,7 @@ while program_active:
             if len(followable_green) == 2 and not turning:
                 # We have found 2 followable green contours, this means we need turn around 180 degrees
                 print("DOUBLE GREEN")
-                m.run_tank_for_time(40, 40, 1000)
+                m.run_tank_for_time(40, 40, 400)
                 start_bearing = cmps.read_bearing_16bit()
                 align_to_bearing(start_bearing - 180, 10, debug_prefix="Double Green Rotate - ")
                 m.run_tank_for_time(40, 40, 200)
@@ -1200,8 +1270,16 @@ while program_active:
 
         #Find the black contours
         sorted_black_contours = ck.findBestContours(black_contours, black_contour_threshold, last_line_pos)
-        if (len(sorted_black_contours) == 0):
+        if len(sorted_black_contours) == 0:
             print("No black contours found")
+            # We've lost any black contour, so it's possible we have encountered a gap in the line
+            # Hence, go straight.
+            #
+            # Optimally, this should figure out if the line lost was in the centre and hence we haven't just fallen off the line.
+            # Going forward, instead of using current_steering, means if we fall off the line, we have little hope of getting back on...
+            new_steer = current_steering
+            if -30 < new_steer and new_steer < 30:
+                new_steer = 0
             m.run_steer(follower_speed, 100, current_steering)
 
             preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
@@ -1277,13 +1355,32 @@ while program_active:
         pid_last_error = error
         current_time = time.time()
 
-        motor_vals = m.run_steer(follower_speed, 100, current_steering)
+        current_pitch = cmps.read_pitch()
+
+        if current_pitch > 180 and current_pitch < 240:
+            if time_since_ramp_start == 0:
+                time_since_ramp_start = time.time()
+            print(f"RAMP ({int(time.time() - time_since_ramp_start)})") 
+            if time.time() - time_since_ramp_start > 10:
+                motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
+            else:
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+        else:
+            if time_since_ramp_start > 3:
+                time_ramp_end = time.time() + 2
+
+            time_since_ramp_start = 0
+            if time.time() < time_ramp_end:
+                print("END RAMP")
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+            else:
+                motor_vals = m.run_steer(follower_speed, 100, current_steering)
 
         # ----------
         # DEBUG INFO
         # ----------
 
-        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}\tPitch: {int(current_pitch)}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)

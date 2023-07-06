@@ -1,17 +1,21 @@
 {
-    "black_line_threshold": 175,
-    "black_rescue_threshold": 130,
+    "black_line_threshold": 185,
+    "black_rescue_threshold": 175,
     "green_turn_hsv_threshold": [
         [30, 45, 75],
         [75, 210, 210]
     ],
     "red_hsv_threshold": [
-        [160, 80, 80],
-        [230, 210, 210]
+        [0, 120, 120],
+        [205, 210, 210]
     ],
     "rescue_block_hsv_threshold": [
-        [20, 0, 0],
-        [170, 255, 255]
+        [0, 34, 55],
+        [114, 210, 210]
+    ],
+    "obstacle_hsv_threshold": [
+        [0, 68, 67],
+        [60, 255, 255]
     ],
     "rescue_circle_conf": {
         "dp": 1,
@@ -23,5 +27,7 @@
         "heightBuffer": 345,
         "lowHeightMinRadius": 40,
         "grayScaleMultiplier": 1.7
-    }
+    },
+    "rescue_circle_minradius_offset": 40,
+    "rescue_binary_gray_scale_multiplier": 1.7
 }
