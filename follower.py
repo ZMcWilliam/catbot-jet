@@ -125,6 +125,9 @@ bottom_block_approach_counter = 0
 time_since_ramp_start = 0
 time_ramp_end = 0
 
+no_black_contours_mode = "straight"
+no_black_contours = False
+
 # Choose a random side for the obstacle in case the first direction is not possible
 # A proper check should be added, but this is a quick fix for now
 obstacle_dir = np.random.choice([-1, 1])
@@ -359,9 +362,21 @@ def approach_victim(time_to_approach):
 def check_found_ball():
     global ball_found_qty
 
-    # TODO: Add an actual check if we have a ball or not, and what type it is. (Using VL6180X)
-    ball_found_qty[0] += 1
-    return True
+    try:
+        range_mm = vl6180x.range
+        light_lux = vl6180x.read_lux(adafruit_vl6180x.ALS_GAIN_1)
+        
+        # TODO: Check ball type (However as we don't handle this differently, there's currently no point)
+        print(f"Ball: {range_mm}mm, {light_lux}lux")
+        if range_mm < 5:
+            ball_found_qty[0] += 1
+            return True
+        else:
+            return False
+    except:
+        print("ERR BALL")
+        ball_found_qty[0] += 1
+        return True
 
 def run_evac():
     global frames
@@ -370,11 +385,20 @@ def run_evac():
     global fpsCamera
     global rescue_mode
     global ball_found_qty
+    global program_active
     global last_circle_pos
     global circle_check_counter
     global bottom_block_approach_counter
 
+    evac_start = time.time()
+
     while True:
+        if int(time.time() - evac_start) % 10 == 0:
+            print("EVAC TIME: " + str(int(time.time() - evac_start)))
+
+        if time.time() - evac_start > 120 and rescue_mode == "victim":
+            print("VICTIMS TOOK TOO LONG - SKIPPING TO BLOCK")
+            rescue_mode = "block"
         # time.sleep(program_sleep_time)
         frames += 1
 
@@ -451,7 +475,13 @@ def run_evac():
             
             # Spin around to try and get us off any wall
             align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
-            align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
+            align_to_bearing(cmps.read_bearing_16bit() - 90, 7, debug_prefix="EVAC Align - ")
+
+            front_dist = USS["front"].distance * 100
+
+            if front_dist < 10:
+                m.run_tank_for_time(-60, -60, 2500)
+                align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
 
             servo["cam"].angle = -80
             servo["lift"].angle = 40
@@ -544,9 +574,9 @@ def run_evac():
             if debug_state("rescue"):
                 # cv2.imshow("img0_blurred", img0_blurred)
                 # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
-                cv2.imshow("img0_binary_rescue", img0_binary_rescue)
-                cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
-                cv2.imshow("img0", img0)
+                cv2.imshow("img0_binary_rescue", cv2.resize(img0_binary_rescue, (0, 0), fx=0.8, fy=0.7))
+                cv2.imshow("img0_binary_rescue_clean", cv2.resize(img0_binary_rescue_clean, (0, 0), fx=0.8, fy=0.7))
+                cv2.imshow("img0", cv2.resize(img0, (0, 0), fx=0.8, fy=0.7))
 
                 k = cv2.waitKey(1)
                 if (k & 0xFF == ord('q')):
@@ -569,11 +599,11 @@ def run_evac():
                     last_circle_pos = lowest_circle
                     print("Circle is in the centre-ish")
 
-                    THRESH_FINAL_APPROACH = 380
+                    THRESH_FINAL_APPROACH = 360
                     if lowest_circle[1] > THRESH_FINAL_APPROACH:
                         print("Approaching")
                         approach_victim(1)
-                    m.run_tank_for_time(40, 40, 200)
+                    m.run_tank_for_time(40, 40, 300)
             else:
                 if last_circle_pos is not None and last_circle_pos[1] > 340:
                     print("Approaching with extra distance")
@@ -590,8 +620,8 @@ def run_evac():
                         print("Circle vanished")
                 last_circle_pos = None
                 print("Rotating")
-                m.run_tank_for_time(40, -40, 300)
-                time.sleep(0.3)
+                m.run_tank_for_time(60, -60, 200)
+                time.sleep(0.2)
 
         # ------------------------
         # BLOCK FINDING AND RESCUE
@@ -691,7 +721,7 @@ def run_evac():
                         m.run_tank(35, 10)
                         print("Block on right - turn right")
             else:
-                m.run_tank_for_time(35, -35, 100)
+                m.run_tank_for_time(60, -60, 100)
             
             servo["claw"].angle = -90
 
@@ -708,10 +738,10 @@ def run_evac():
             if debug_state("rescue"):
                 # cv2.imshow("img0_blurred", img0_blurred)
                 # cv2.imshow("img0_gray_rescue_scaled", img0_gray_rescue_scaled)
-                cv2.imshow("img0_binary_rescue_block", img0_binary_rescue_block)
-                cv2.imshow("img0_binary_rescue", img0_binary_rescue)
-                cv2.imshow("img0_binary_rescue_clean", img0_binary_rescue_clean)
-                cv2.imshow("img0", img0)
+                cv2.imshow("img0_binary_rescue_block", cv2.resize(img0_binary_rescue_block, (0, 0), fx=0.8, fy=0.7))
+                cv2.imshow("img0_binary_rescue", cv2.resize(img0_binary_rescue, (0, 0), fx=0.8, fy=0.7))
+                cv2.imshow("img0_binary_rescue_clean", cv2.resize(img0_binary_rescue_clean, (0, 0), fx=0.8, fy=0.7))
+                cv2.imshow("img0", cv2.resize(img0, (0, 0), fx=0.8, fy=0.7))
 
                 k = cv2.waitKey(1)
                 if (k & 0xFF == ord('q')):
@@ -1272,15 +1302,21 @@ while program_active:
         sorted_black_contours = ck.findBestContours(black_contours, black_contour_threshold, last_line_pos)
         if len(sorted_black_contours) == 0:
             print("No black contours found")
+
+            # This is a botchy temp fix so that sometimes we can handle the case where we lose the line, 
+            # and other times we can handle gaps in the line
+            # TODO: Remove this, and implement a proper line following fix 
+            if not no_black_contours:
+                no_black_contours_mode = "straight" if no_black_contours_mode == "steer" else "steer"
+                no_black_contours = True
+
             # We've lost any black contour, so it's possible we have encountered a gap in the line
             # Hence, go straight.
             #
             # Optimally, this should figure out if the line lost was in the centre and hence we haven't just fallen off the line.
             # Going forward, instead of using current_steering, means if we fall off the line, we have little hope of getting back on...
-            new_steer = current_steering
-            if -30 < new_steer and new_steer < 30:
-                new_steer = 0
-            m.run_steer(follower_speed, 100, current_steering)
+            new_steer = current_steering if no_black_contours_mode == "steer" else 0
+            m.run_steer(follower_speed, 100, new_steer)
 
             preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
             
@@ -1291,6 +1327,9 @@ while program_active:
                     program_active = False
                     break
             continue
+
+        no_black_contours = False
+        
         chosen_black_contour = sorted_black_contours[0]
         
         # Update the reference position for subsequent calculations
@@ -1361,6 +1400,8 @@ while program_active:
             if time_since_ramp_start == 0:
                 time_since_ramp_start = time.time()
             print(f"RAMP ({int(time.time() - time_since_ramp_start)})") 
+            if time.time() - time_since_ramp_start > 18:
+                motor_vals = m.run_steer(100, 100, 0)
             if time.time() - time_since_ramp_start > 10:
                 motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
             else:
