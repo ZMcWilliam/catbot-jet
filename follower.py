@@ -128,6 +128,9 @@ time_ramp_end = 0
 no_black_contours_mode = "straight"
 no_black_contours = False
 
+current_bearing = None
+last_significant_bearing_change = 0
+
 # Choose a random side for the obstacle in case the first direction is not possible
 # A proper check should be added, but this is a quick fix for now
 obstacle_dir = np.random.choice([-1, 1])
@@ -273,10 +276,10 @@ def avoid_obstacle() -> None:
     img0_hsv = frame_processed["hsv"]
 
     img0_obstacle = cv2.inRange(img0_hsv, config_values["obstacle_hsv_threshold"][0], config_values["obstacle_hsv_threshold"][1])
-    img0_obstacle = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+    img0_obstacle = cv2.dilate(img0_obstacle, np.ones((5,5),np.uint8), iterations=2)
 
     obstacle_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_obstacle, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
-    obstacle_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
+    obstacle_contours = sorted(obstacle_contours, key=lambda contour: contour[1], reverse=True)
     obstacle_contours_filtered = [contour[0] for contour in obstacle_contours if contour[1] > 10000]
 
     if len(obstacle_contours_filtered) == 0:
@@ -287,7 +290,7 @@ def avoid_obstacle() -> None:
         time.sleep(2)
         # Random rotate dir
         evac_rotate_dir = np.random.choice([-1, 1])
-        align_to_bearing(cmps.read_bearing_16bit() - (70 * evac_rotate_dir), 1, debug_prefix="EVAC ROTATE: ")
+        align_to_bearing(cmps.read_bearing_16bit() - (80 * evac_rotate_dir), 1, debug_prefix="EVAC ROTATE: ")
         time.sleep(1)
         print("STARTING EVAC")
         run_evac()
@@ -296,10 +299,10 @@ def avoid_obstacle() -> None:
     
     obstacle_dir = -1 if obstacle_dir == 1 else 1
     m.run_tank_for_time(-40, -40, 900)
-    align_to_bearing(cmps.read_bearing_16bit() - (90 * obstacle_dir), 1, debug_prefix="OBSTACLE ALIGN: ")
+    align_to_bearing(cmps.read_bearing_16bit() - (70 * obstacle_dir), 1, debug_prefix="OBSTACLE ALIGN: ")
     time.sleep(0.2)
-    if obstacle_dir > 0: m.run_tank(100, 32)
-    else: m.run_tank(32, 100)
+    if obstacle_dir > 0: m.run_tank(100, 30)
+    else: m.run_tank(30, 100)
     time.sleep(1) # Threshold before accepting any possibility of a line
 
     # Start checking for a line while continuing to rotate around the obstacle
@@ -1413,15 +1416,34 @@ while program_active:
             time_since_ramp_start = 0
             if time.time() < time_ramp_end:
                 print("END RAMP")
+                last_significant_bearing_change = time.time()
                 motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
             else:
+                new_bearing = cmps.read_bearing_16bit()
+
+                if current_bearing is None:
+                    last_significant_bearing_change = time.time()
+                    current_bearing = new_bearing
+                
+                bearing_diff = abs(new_bearing - current_bearing)
+                if frames % 7 == 0: current_bearing = new_bearing
+                    
+                # Check if the absolute difference is within the specified range or if it wraps around 360
+                bearing_min_err = 6
+                if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
+                    print("SAME BEARING FOR 10 SECONDS")
+                    m.run_tank_for_time(100, 100, 400)
+                    last_significant_bearing_change = time.time()
+                elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
+                    last_significant_bearing_change = time.time()
+                    
                 motor_vals = m.run_steer(follower_speed, 100, current_steering)
 
         # ----------
         # DEBUG INFO
         # ----------
 
-        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteering: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}\tPitch: {int(current_pitch)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteer: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}\tPit: {int(current_pitch)}\tBear: {current_bearing} LSB: {int(time.time() - last_significant_bearing_change)}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
