@@ -980,7 +980,6 @@ while program_active:
         # -----------------
         # STOP ON RED CHECK
         # -----------------
-        # Since red is rare, and only occurs at the very end of the course, only check for it every 5 frames
         img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
         img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
 
