@@ -14,6 +14,26 @@
                                                                                                                            
 # Super Team Challenge - CatBot NEO + Apollo 12
 
+# CatBot NEO is the "Ambulance" and goes first, Apollo 12 follows shortly afterwards.
+# Time was incredibly limited to solve this challenge, and hence many workarounds and janky code has been implemented
+
+# Proposed Solution: 
+#   - Connect robots via bluetooth (Apollo's HC-05 module to Raspberry Pi).
+#   - CatBot gets a head start, and starts finding intersections
+#   - After 10 seconds, Apollo starts and finds the first intersection, then sends a request to CatBot for the first instruction
+#   - CatBot sends back the side apollo started on, and which way to go at the intersection (bool representing forward or turn)
+#   - CatBot will be far ahead of Apollo, so each time Apollo reaches an intersection, it will request the index to CatBot, and get a response
+#   - Include checks that bluetooth instructions were recieved and correctly read (add checksum bit)
+#   - CatBot rescues silver ball first, then, since Apollo can't lift, pick up black ball and then place it on Apollo for it to be rescued. 
+
+# What we were able to achieve:
+#   - Due to extremely tight time constraints and bluetooth issues, we were only able to achieve CatBot's following and rescue side.
+#   - This program has been modified and is capable of solving the full line with every intersection, and finally rescuing a victim and exiting
+#   - CatBot does not distinguish between black and silver victims yet (but is capable), we found that it would reject black for some reason anyway
+#   - Apollo waits at the first intersection to avoid a lack of progress, unfortunately, this means we could only get points for the rescue
+#
+#   - In the first round, we successfully completed the entire line and sucessfully rescued one victim.
+
 # RoboCup Junior Rescue Line 2023 - Bordeaux, France
 # https://github.com/zmcwilliam/catbot-rcji
 
@@ -64,14 +84,14 @@ error_weight = 0.5                  # Weight of the error value when calculating
 angle_weight = 1-error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
 
-KP = 1.3                            # Proportional gain
+KP = 0.8                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.08                           # Derivative gain
 
-follower_speed = 45                 # Base speed of the line follower
+follower_speed = 38                 # Base speed of the line follower
 obstacle_treshold = 9               # Minimum distance treshold for obstacles (cm)
 
-evac_cam_angle = 7                  # Angle of the camera when evacuating
+evac_cam_angle = 20                  # Angle of the camera when evacuating
 
 # ---------------------
 # LOAD STORED JSON DATA
@@ -408,7 +428,7 @@ def run_evac():
         if int(time.time() - evac_start) % 10 == 0:
             print("EVAC TIME: " + str(int(time.time() - evac_start)))
 
-        if time.time() - evac_start > 120 and rescue_mode == "victim":
+        if time.time() - evac_start > 100 and rescue_mode == "victim":
             print("VICTIMS TOOK TOO LONG - SKIPPING TO BLOCK")
             rescue_mode = "block"
         # time.sleep(program_sleep_time)
@@ -512,7 +532,7 @@ def run_evac():
         # VICTIM STUFF
         # ------------
         elif rescue_mode == "victim":
-            if sum(ball_found_qty) >= 3:
+            if sum(ball_found_qty) >= 1:
                 print("Found all victims")
                 rescue_mode = "block"
 
@@ -709,6 +729,9 @@ def run_evac():
                         servo["gate"].angle = -90
                         m.run_tank_for_time(35, 35, 1000)
                         time.sleep(1)
+
+                        rescue_mode = "exit"
+                        continue
                     
                     m.run_tank_for_time(35, 35, 200)
                     print("Block on bottom - approach")
@@ -760,6 +783,42 @@ def run_evac():
                     # pr.print_stats(SortKey.TIME)
                     program_active = False
                     break
+        
+        elif rescue_mode == "exit":
+            m.run_tank_for_time(60, 60, 1200)
+            align_to_bearing(cmps.read_bearing_16bit() + 45 + 90, 1, debug_prefix="EVAC EXIT A: ")
+
+            m.run_tank_for_time(60, 60, 2000)
+            m.run_tank_for_time(-50, -50, 800)
+
+            align_to_bearing(cmps.read_bearing_16bit() - 90, 1, debug_prefix="EVAC EXIT B: ")
+
+            m.stop_all()
+            time.sleep(1)
+
+            start_exit_time = time.time()
+            while time.time() - start_exit_time < 8:
+                m.run_tank(40, 40)
+                
+                front_dist = USS["front"].distance * 100
+                print(front_dist)
+
+                if front_dist < 5:
+                    # We hit a wall, rotate out of it
+                    m.run_tank_for_time(-50, -50, 300)
+                    align_to_bearing(cmps.read_bearing_16bit() - 80, 1, debug_prefix="EVAC EXIT C: ")
+
+            m.stop_all()
+            
+            # Janky solution to reduce the chance of a lack of progress by just halting the program here. 
+            # We will still get exit points, hence no point continuing.
+            while True:
+                time.sleep(1)
+
+            rescue_mode = "init"
+            break
+            
+            
 # ------------------------
 # WAIT FOR VISION TO START
 # ------------------------
@@ -788,6 +847,9 @@ current_turn_dir = "straight" # "straight", "left", or "right" - The direction w
 
 turning_timeout = 0
 turning_dir = "left"
+
+intersection_order = [-1, -1, -1, -1, -1]
+
 # ---------
 # MAIN LOOP
 # ---------
@@ -821,16 +883,25 @@ while program_active:
         # OBSTACLE AVOIDANCE
         # ------------------
         front_dist = USS["front"].distance * 100
-        # if front_dist < obstacle_treshold:
-        #     print(f"Obstacle detected at {front_dist}cm... ", end="")
-        #     m.stop_all()
-        #     time.sleep(0.7)
-        #     if USS["front"].distance * 100 < obstacle_treshold + 1:
-        #         print("Confirmed.")
-        #         avoid_obstacle()
-        #     else:
-        #         print("False positive, continuing.")
-        #     continue
+        if front_dist < obstacle_treshold:
+            print(f"Obstacle detected at {front_dist}cm... ", end="")
+            m.stop_all()
+            time.sleep(0.7)
+            if USS["front"].distance * 100 < obstacle_treshold + 1:
+                print("Confirmed.")
+
+                # No obstacles exist in the super team challenge, so this is definitely evac. Run janky evac entry program:
+                m.run_tank_for_time(-40, -40, 500)
+                time.sleep(2)
+                # Random rotate dir
+                evac_rotate_dir = np.random.choice([-1, 1])
+                align_to_bearing(cmps.read_bearing_16bit() - (80 * evac_rotate_dir), 1, debug_prefix="EVAC ROTATE: ")
+                time.sleep(1)
+                print("STARTING EVAC")
+                run_evac()
+            else:
+                print("False positive, continuing.")
+            continue
 
         # -------------
         # VISION HANDLING
@@ -973,110 +1044,6 @@ while program_active:
                         })
                         if len(followable_red) >= 2:
                             break # There should never be more than 2 followable red contours, so we can stop looking for more
-                
-        #     if len(followable_green) == 2 and not turning:
-        #         # We have found 2 followable green contours, this means we need turn around 180 degrees
-        #         print("DOUBLE GREEN")
-        #         m.run_tank_for_time(40, 40, 400)
-        #         start_bearing = cmps.read_bearing_16bit()
-        #         align_to_bearing(start_bearing - 180, 10, debug_prefix="Double Green Rotate - ")
-        #         m.run_tank_for_time(40, 40, 200)
-        #         turning = "RIGHT" # Arbitrarily make it right for now... It is very possible this won't work
-        #         continue
-        #     else:
-        #         if len(followable_green) >= 2 and turning:
-        #             followable_green.sort(key=lambda x: x["w_bounds"][0])
-        #             if turning == "LEFT":
-        #                 # If we are turning left, we want the leftmost green contour
-        #                 followable_green = followable_green[:1]
-        #             elif turning == "RIGHT":
-        #                 # If we are turning right, we want the rightmost green contour
-        #                 followable_green = followable_green[-1:]
-
-        #         if len(followable_green) == 1:
-        #             can_follow_green = True
-        #             if not turning:
-        #                 # With double green, we may briefly see only 1 green contour while entering. 
-        #                 # Hence, add some delay to when we start turning to prevent this and ensure we can see all green contours
-        #                 if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
-        #                 if time.time() - initial_green_time < 0.3: can_follow_green = False
-                    
-        #             if can_follow_green:
-        #                 selected = followable_green[0]
-        #                 # Dilate selected["w"] to make it larger, and then use it as a mask
-        #                 img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
-        #                 cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
-
-        #                 # Mask the line image with the dilated white contour
-        #                 img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
-        #                 # Erode the line image to remove slight inconsistencies we don't want
-        #                 img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
-
-        #                 changed_img0_line = img0_line_new
-
-        #                 last_green_time = time.time()
-        #                 if not turning:
-        #                     # Based on the centre location of the white contour, we are either turning left or right
-        #                     if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
-        #                         print("Start Turn: left")
-        #                         turning = "LEFT"
-        #                     else:
-        #                         print("Start Turn: right")
-        #                         turning = "RIGHT"
-                
-        #     if (changed_img0_line is not None):
-        #         print("Green caused a change in the line")
-        #         img0_line_new = changed_img0_line
-        #         new_black_contours, new_black_hierarchy = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        #         cv2.drawContours(img0, new_black_contours, -1, (0,0,255), 2)
-        #         if (len(new_black_contours) > 0):
-        #             black_contours = new_black_contours
-        #             black_hierarchy = new_black_hierarchy
-        #         else:
-        #             print("No black contours found after changing contour")
-
-        #         changed_black_contour = False
-
-        #     print("GREEN TURN STUFF")
-        # elif turning is not None and last_green_time + 1 < time.time():
-        #     turning = None
-        #     print("No longer turning")
-        
-        # -----------------
-        # STOP ON RED CHECK
-        # -----------------
-        # img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
-        # img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
-
-        # red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
-        # red_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
-        # red_contours_filtered = [contour[0] for contour in red_contours if contour[1] > 20000]
-
-        # if len(red_contours_filtered) > 0:
-        #     edges = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(red_contours_filtered[0]), img0_binary.shape))
-        #     if edges == ["left", "right"]:
-        #         m.stop_all()
-        #         red_stop_check += 1
-        #         print(f"RED IDENTIFIED - {red_stop_check}/3 tries")
-
-        #         if red_stop_check == 1:
-        #             time.sleep(0.1)
-        #             m.run_tank_for_time(-40, -40, 100)
-        #             time.sleep(0.1)
-
-        #         time.sleep(7)
-
-        #         if debug_state():
-        #             cv2.imshow("img0_red", img0_red)
-        #             cv2.waitKey(1)
-                    
-        #         if red_stop_check > 3:
-        #             print("DETECTED RED STOP 3 TIMES, STOPPING")
-        #             break
-
-        #         continue # Don't run the rest of the follower, we don't really want to move forward in case we accidentally loose the red...
-        #     else:
-        #         red_stop_check = 0
 
         # -------------
         # INTERSECTIONS
@@ -1255,18 +1222,23 @@ while program_active:
                 elif edges_black == ["bottom", "right", "top"]:
                     int_t_type = "right"
 
+                if current_side is None and (int_t_type == "front" or int_t_type == "right"):
+                    current_side = int_t_type
+
+                # Using F- for all, this means we are not trying to simulate a new line and instead just turning by bearing
+                # It seems to be far more accurate for this purpose, and worked flawlessly for a whole run.
                 instructs = {
-                    "front_green": "TURN",
-                    "left_green": "STRAIGHT",
-                    "right_green": "STRAIGHT",
+                    "front_green": "F-TURN",
+                    "left_green": "F-STRAIGHT",
+                    "right_green": "F-STRAIGHT",
                     
                     "front_red": "SPIN",
-                    "left_red": "TURN",
-                    "right_red": "TURN",
+                    "left_red": "F-TURN",
+                    "right_red": "F-TURN",
 
-                    "front_none": "TURN",
-                    "left_none": "TURN",
-                    "right_none": "TURN",
+                    "front_none": "F-TURN",
+                    "left_none": "F-TURN",
+                    "right_none": "F-TURN",
 
                     # Silver breaks the image so we need to force the turn a different way
                     "front_silver": "F-TURN",
@@ -1280,14 +1252,45 @@ while program_active:
                     instruct = instructs[f"{int_t_type}_{int_t_col}"] if not is_currently_turning else "C-TURN"
                     print(f"INSTRUCT: {instruct}\tT-{int_t_type} C-{int_t_col}\tCURRENT: D-{current_turn_dir}")
 
-                    if instruct == "SPIN":
+                    if instruct == "SPIN" and not is_currently_turning:
                         m.run_tank_for_time(40, 40, 400)
-                        start_bearing = cmps.read_bearing_16bit()
-                        align_to_bearing(start_bearing - 180, 10, debug_prefix="Spin - ")
+                        align_to_bearing(cmps.read_bearing_16bit() - 180, 10, debug_prefix="Spin - ")
                         m.run_tank_for_time(40, 40, 200)
                         current_turn_dir = "right" if current_turn_dir == "left" else "left" # Flip the turn dir as we have turned around
                         continue
 
+                    if instruct == "F-TURN" and not is_currently_turning:
+                        if int_t_type != "front": 
+                            m.run_tank_for_time(40, 40, 500)
+
+                        target_dir = ("left" if current_turn_dir == "right" else "right") if int_t_type == "front" else int_t_type
+                        
+                        print("TARGET DIR: " + target_dir)
+                        if target_dir == "left":
+                            align_to_bearing(cmps.read_bearing_16bit() - 90, 10, debug_prefix="F-Turn - ")
+
+                            if current_turn_dir == "right":
+                                current_turn_dir = "straight"
+                            else:
+                                current_turn_dir = "left"
+                        else:
+                            align_to_bearing(cmps.read_bearing_16bit() + 90, 10, debug_prefix="F-Turn - ")
+                            if current_turn_dir == "left":
+                                current_turn_dir = "straight"
+                            else:
+                                current_turn_dir = "right"
+
+                        m.run_tank_for_time(40, 40, 300)
+                        continue
+
+                    if instruct == "F-STRAIGHT" and not is_currently_turning:
+                        print("STRAIGHT")
+                        m.run_tank_for_time(40, 40, 800)
+                        continue
+                    
+                    # Below here is unused as all instructs are forced bearing turns, however, this was an implementation like follower green turns
+                    # which used white contours to draw a new line that could be used to efficiently follow a new line without fixed turns.
+                    # unfortunately, it wasn't entirely reliable, and we did not have time to fix it.
                     target_turn_dir = None
 
                     if is_currently_turning:
@@ -1369,61 +1372,6 @@ while program_active:
                         
                     img0_line_new = helper_intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
                     changed_black_contour = cv2.bitwise_not(img0_line_new)
-
-            # elif (len(white_contours_filtered) == 4):
-            #     intersection_state_debug = ["4-ng", time.time()]
-            #     # Get the center of each contour
-            #     white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
-
-            #     # Sort the contours from left to right - Based on the centre of the contour's horz val
-            #     sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
-                
-            #     # Sort the contours from top to bottom, for each side of the image - Based on the centre of the contour's vert val
-            #     contour_BL, contour_TL = tuple(sorted(sorted_contours_horz[:2], reverse=True, key=lambda contour: contour[1][1]))
-            #     contour_BR, contour_TR = tuple(sorted(sorted_contours_horz[2:], reverse=True, key=lambda contour: contour[1][1]))
-
-            #     # Simplify the contours to get the corner points
-            #     approx_BL = ck.simplifiedContourPoints(contour_BL[0], 0.03)
-            #     approx_TL = ck.simplifiedContourPoints(contour_TL[0], 0.03)
-            #     approx_BR = ck.simplifiedContourPoints(contour_BR[0], 0.03)
-            #     approx_TR = ck.simplifiedContourPoints(contour_TR[0], 0.03)
-
-            #     # Middle of contour centres
-            #     mid_point = (
-            #         int((contour_BL[1][0] + contour_TL[1][0] + contour_BR[1][0] + contour_TR[1][0]) / 4),
-            #         int((contour_BL[1][1] + contour_TL[1][1] + contour_BR[1][1] + contour_TR[1][1]) / 4)
-            #     )
-
-            #     # Get the closest point of the approx contours to the mid point
-            #     def closestPointToMidPoint(approx_contour, mid_point):
-            #         return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
-                
-            #     closest_BL = closestPointToMidPoint(approx_BL, mid_point)
-            #     closest_TL = closestPointToMidPoint(approx_TL, mid_point)
-            #     closest_BR = closestPointToMidPoint(approx_BR, mid_point)
-            #     closest_TR = closestPointToMidPoint(approx_TR, mid_point)
-
-            #     # If closest_TL or closest_TR is touching the top of the screen, it is quite possibly invalid and will cause some issues with cutting
-            #     # So, we will find the next best point, the point inside the relevant contour, and is closest to the X value of the other point
-            #     if closest_TL[1] < 10:
-            #         closest_TL = closest_BL
-            #         closest_BL = sorted(approx_BL, key=lambda point: abs(point[0] - closest_BL[0]))[1]
-            #     elif closest_BL[1] > img0_binary.shape[0] - 10:
-            #         closest_BL = closest_TL
-            #         closest_TL = sorted(approx_TL, key=lambda point: abs(point[0] - closest_TL[0]))[1]
-            #     # # We will do the same with the right-side contours
-            #     if closest_TR[1] < 10:
-            #         closest_TR = closest_BR
-            #         closest_BR = sorted(approx_BR, key=lambda point: abs(point[0] - closest_BR[0]))[1]
-            #     elif closest_BR[1] > img0_binary.shape[0] - 10:
-            #         closest_BR = closest_TR
-            #         closest_TR = sorted(approx_TR, key=lambda point: abs(point[0] - closest_TR[0]))[1]
-
-            #     img0_line_new = helper_intersections.CutMaskWithLine(closest_BL, closest_TL, img0_line_new, "left")
-            #     img0_line_new = helper_intersections.CutMaskWithLine(closest_BR, closest_TR, img0_line_new, "right")
-
-            #     current_linefollowing_state = "4-ng"
-            #     changed_black_contour = cv2.bitwise_not(img0_line_new)
 
         if (changed_black_contour is not False):
             print("Changed black contour, LF State: ", current_linefollowing_state)
