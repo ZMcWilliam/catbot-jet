@@ -164,15 +164,10 @@ def show_selected_tab(tab_id):
 
         if cam is None:
             cam = helper_camera.CameraStream(
-                camera_num = 0,
-                processing_conf = {
-                    "calibration_map": calibration_map,
-                    "black_line_threshold": config_values["black_line_threshold"],
-                    "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
-                    "red_hsv_threshold": config_values["red_hsv_threshold"],
-                }
+                camera_num=0,
+
             )
-            cam.start_stream()
+            cam.wait_for_image()
 
         cam.set_processing_conf({
             "calibration_map": config_values["calibration_map"],

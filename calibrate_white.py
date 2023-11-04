@@ -4,8 +4,8 @@ import cv2
 import numpy as np
 import helper_camera
 
-cam = helper_camera.CameraStream()
-cam.start_stream()
+cam = helper_camera.CameraStream(camera_num=0)
+cam.wait_for_image()
 
 calibration_images = {
     "w": [],
@@ -42,22 +42,15 @@ while True:
     calibration_images[requested] = []
 
     while NUM_CALIBRATION_IMAGES > len(calibration_images[requested]):
-        img = cam.read_stream()
-        if img is None:
-            continue
-        img = img[0:429, 0:img.shape[1]]
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img0 = cam.read_stream()
+        img0_resized = cam.resize_image(img0)
+        img0_gray = cv2.cvtColor(img0_resized, cv2.COLOR_BGR2GRAY)
 
-        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        img_gray = cv2.GaussianBlur(img_gray, (5, 5), 0)
-
-        print(img_gray[100][100])
-
-        calibration_images[requested].append(img_gray)
+        calibration_images[requested].append(img0_gray)
         print(f"Calibration image {len(calibration_images[requested])} of {NUM_CALIBRATION_IMAGES} captured.")
 
         time.sleep(0.01)
-        cv2.imshow("Calibration Image", img_gray)
+        cv2.imshow("Calibration Image", img0_gray)
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):
             break

@@ -1,41 +1,72 @@
 import time
 import cv2
-import json
 import helper_camera
-import numpy as np
-from threading import Thread
-from picamera2 import Picamera2
+# import helper_config as config
 
-cam = helper_camera.CameraStream()
-cam.start_stream()
-time.sleep(1)
+cam = helper_camera.CameraStream(
+    camera_num = 0,
+    # processing_conf = config.processing_conf
+)
+cam.wait_for_image()
 
-# Load the calibration map from the JSON file
-with open("calibration.json", "r") as json_file:
-    calibration_data = json.load(json_file)
-calibration_map = np.array(calibration_data["calibration_map_w"], dtype=np.float32)
+# Get max width and height
+img0 = cam.read_stream()
+max_width = img0.shape[1]
+max_height = img0.shape[0]
 
-while True:
-    img0 = cam.read_stream()
-    # img0 = img0[0:img0.shape[0]-38, 0:img0.shape[1]]
-    img0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
+cam_crop_w = 355
+cam_crop_h = 264
+cam_crop_offset_x = int(max_width / 2) + 4
+cam_crop_offset_y = 104
 
-    img0_gray = cv2.cvtColor(img0, cv2.COLOR_RGB2GRAY)
-    # img0_gray = cv2.equalizeHist(img0_gray)
-    img0_gray = cv2.GaussianBlur(img0_gray, (5, 5), 0)
+cv2.namedWindow("Config")
 
-    # print(img0_gray[100][100], calibration_map[100][100])
+def update_width(val):
+    global cam_crop_w
+    cam_crop_w = val
 
-    # img0_gray_scaled = 240 / np.clip(calibration_map, a_min=1, a_max=None) * img0_gray  # Scale white values based on the inverse of the calibration map
-    # img0_gray_scaled = np.clip(img0_gray_scaled, 0, 255)    # Clip the scaled image to ensure values are within the valid range
-    # img0_gray_scaled = img0_gray_scaled.astype(np.uint8)    # Convert the scaled image back to uint8 data type
-    
-    cv2.imshow(f"img0", img0)
-    cv2.imshow(f"img0_gray", img0_gray)
-    # cv2.imshow(f"img0_gray_scaled", img0_gray_scaled)
+def update_height(val):
+    global cam_crop_h
+    cam_crop_h = val
 
-    k = cv2.waitKey(1)
-    if (k & 0xFF == ord('q')):
-        break
+def update_offset_x(val):
+    global cam_crop_offset_x
+    cam_crop_offset_x = int(val - (max_width / 2))
+
+def update_offset_y(val):
+    global cam_crop_offset_y
+    cam_crop_offset_y = val
+
+cv2.createTrackbar("Crop Width", "Config", cam_crop_w, max_width, update_width)
+cv2.createTrackbar("Crop Height", "Config", cam_crop_h, max_height, update_height)
+
+cv2.createTrackbar("Crop Offset X", "Config", cam_crop_offset_x, max_width, update_offset_x)
+cv2.createTrackbar("Crop Offset Y", "Config", cam_crop_offset_y, max_height, update_offset_y)
+
+try:
+    start_time = time.time()
+    frames_count = 0
+    while True:
+        frames_count += 1
+        if frames_count % 1000 == 0:
+            elapsed_time = time.time() - start_time
+            fps = frames_count / elapsed_time
+
+            print(f"FPS: Cam {cam.get_fps():.2f}\tLoop {fps:.2f}\tElapsed {elapsed_time:.2f}")
+
+        # img0 = cam.read_stream_processed()
+        img0 = cam.read_stream()
+        cv2.imshow("Raw", img0)
+
+        resized = cam.resize_image(img0, cam_crop_w, cam_crop_h, cam_crop_offset_x, cam_crop_offset_y)
+        cv2.imshow("Resized", resized)
+
+        k = cv2.waitKey(1)
+        if k & 0xFF == ord('q'):
+            break
+
+        time.sleep(0.001)
+except KeyboardInterrupt:
+    print("Main loop interrupted. Exiting...")
 
 cam.stop()

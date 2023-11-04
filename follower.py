@@ -149,7 +149,6 @@ cam = helper_camera.CameraStream(
         "red_hsv_threshold": config_values["red_hsv_threshold"],
     }
 )
-cam.start_stream()
 
 servo = {
     "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
@@ -268,11 +267,6 @@ def avoid_obstacle() -> None:
         print("Waiting for image...")
         time.sleep(0.1)
 
-    while cam.is_halted():
-        print("Camera is halted... Waiting")
-        m.stop_all()
-        time.sleep(0.1)
-
     img0_hsv = frame_processed["hsv"]
 
     img0_obstacle = cv2.inRange(img0_hsv, config_values["obstacle_hsv_threshold"][0], config_values["obstacle_hsv_threshold"][1])
@@ -307,16 +301,10 @@ def avoid_obstacle() -> None:
 
     # Start checking for a line while continuing to rotate around the obstacle
     while True:
-        if cam.is_halted():
-            print("[OBSTACLE] Camera is halted... Waiting")
-            m.stop_all()
-            time.sleep(0.1)
-            continue
-
         frame_processed = cam.read_stream_processed()
 
         img0_line_not = cv2.bitwise_not(frame_processed["line"])
-        black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
 
         if len(black_contours_filtered) >= 1:
@@ -419,12 +407,6 @@ def run_evac():
             time.sleep(0.1)
             fpsTime = time.time()
             frames = 0
-            continue
-
-        if cam.is_halted():
-            print("Camera is halted... Waiting")
-            m.stop_all()
-            time.sleep(0.1)
             continue
 
         img0 = frame_processed["resized"]
@@ -745,9 +727,6 @@ def run_evac():
 # ------------------------
 m.stop_all()
 os.system("cat motd.txt")
-while cam.is_halted():
-    time.sleep(0.1)
-
 for i in range(3, 0, -1):
     print(f"Starting in {i}...", end="\r")
     time.sleep(1)
@@ -809,12 +788,6 @@ while program_active:
         # -------------
         # VISION HANDLING
         # -------------
-        if cam.is_halted():
-            print("Camera is halted... Waiting")
-            m.stop_all()
-            time.sleep(0.1)
-            continue
-
         changed_black_contour = False
         frame_processed = cam.read_stream_processed()
 

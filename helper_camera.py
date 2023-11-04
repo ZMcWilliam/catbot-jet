@@ -1,24 +1,24 @@
+import sys
 import time
-import cv2
-import json
+import signal
+import atexit
 import numpy as np
-import queue
-from picamera2 import Picamera2
+import cv2
 from threading import Thread
 
-def get_camera(num):
-    cam = Picamera2(num)
-    if num == 0: # Pi camera
-        available_modes = cam.sensor_modes
-        available_modes.sort(key=lambda x: x["fps"], reverse=True)
-        chosen_mode = available_modes[0]
-        cam.video_configuration = cam.create_video_configuration(
-                raw={"size": chosen_mode["size"], "format": chosen_mode["format"].format},
-                main={"size": (640,480)},
-        )
-        cam.configure("video")
-        cam.set_controls({"FrameRate": 120,"ExposureTime": 10000})
+def gstreamer_pipeline(sensor_id=0, capture_width=1280, capture_height=720,
+                       display_width=640, display_height=480, framerate=60, flip_method=0):
+    return (
+        f"nvarguscamerasrc sensor-id={sensor_id} ! "
+        f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, framerate=(fraction){framerate}/1 ! "
+        f"nvvidconv flip-method={flip_method} ! "
+        f"video/x-raw, width=(int){display_width}, height=(int){display_height}, format=(string)BGRx ! "
+        f"videoconvert ! "
+        f"video/x-raw, format=(string)BGR ! appsink"
+    )
 
+def get_camera(num):
+    cam = cv2.VideoCapture(gstreamer_pipeline(num), cv2.CAP_GSTREAMER)
     return cam
 
 class CameraStream:
@@ -27,23 +27,7 @@ class CameraStream:
         self.cam = get_camera(self.num)
         self.processing_conf = processing_conf
 
-        if self.processing_conf is None:
-            print("[CAMERA] Warning: No processing configuration provided, images will not be pre-processed")
-
-        self.buffer_halt = True
-
-        self.buffer_queue = queue.Queue(maxsize=1)
-        self.buffer_thread = None
-        self.buffer_thread_id = 0
-        self.last_buffer_create_time = 0
-
-        self.first_frame_found = False
-
-        self.stream_running = False
-        
-        self.frame = None
-
-
+        self.img = None
         self.processed = {
             "raw": None,
             "resized": None,
@@ -57,139 +41,77 @@ class CameraStream:
 
         self.frames = 0
         self.start_time = 0
-        self.last_capture_time = 0
-        self.stop_time = 0
 
-    def is_halted(self):
-        return self.buffer_halt
-    
+        self.stream_running = True
+        self.capture_thread = Thread(target=self.update_stream, args=())
+        self.capture_thread.start()
+
+        atexit.register(self.stop)
+        signal.signal(signal.SIGINT, self.signal_handler)
+        signal.signal(signal.SIGTERM, self.signal_handler)
+
+        print(f"[CAMERA] C{self.num} Initialized")
+
     def take_image(self):
-        self.cam.start()
-        new_frame = self.frame
-        while new_frame == self.frame:
-            new_frame = self.cam.helpers.make_array(self.cam.capture_buffer(), self.cam.camera_configuration()["main"])
-            print(f"[CAMERA] C{self.num} Frame Captured")
-        self.cam.stop()
-        self.frame = new_frame
-        return self.frame
-        
-    def read_stream(self):
-        if not self.stream_running: 
-            raise Exception(f"[CAMERA] Camera {self.num} is not active, run .start_stream() first")
+        ret, new_img = self.cam.read()
+        if not ret:
+            raise Exception("[CAMERA] Failed to capture an image.")
+        print(f"[CAMERA] C{self.num} Image captured")
+        self.img = new_img
+        return self.img
 
-        return self.frame
+    def read_stream(self):
+        return self.img
 
     def read_stream_processed(self):
-        if not self.stream_running: 
-            raise Exception(f"[CAMERA] Camera {self.num} is not active, run .start_stream() first")
-
         return self.processed
 
-    def start_stream(self):
-        print(f"[CAMERA] Starting stream for Camera {self.num}")
-        self.thread = Thread(target=self.update_stream, args=())
-        self.stream_running = True
-        self.thread.start()
-        
+    def wait_for_image(self):
+        waitingText = f"[CAMERA] C{self.num} Waiting for first image..."
+        time.sleep(0.5)
+        while self.img is None or (self.processing_conf is not None and self.processed["raw"] is None):
+            time.sleep(0.1)
+            print(waitingText, end="\r")
+            waitingText += "."
+        print(f"{waitingText} Ready!")
+
     def update_stream(self):
-        self.cam.start()
         self.start_time = time.time()
-        self.last_capture_time = time.time()
 
         while self.stream_running:
             self.frames += 1
-            
-            if not self.buffer_thread or not self.buffer_thread.is_alive():
-                self.buffer_halt = True
-                print("\n[CAMERA] NEW BUFFER CREATED\n")
-                if time.time() - self.last_buffer_create_time < 5:
-                    print("[CAMERA] WARNING: Buffer thread died too quickly, entirely restarting stream")
-                    try:
-                        def thread_attempt_stop():
-                            self.cam.stop()
-                            print("Camera stopped")
-                        def thread_attempt_close():
-                            self.cam.close()
-                            print("Camera closed")
+            ret, self.img = self.cam.read()
+            if not ret:
+                print(f"[CAMERA] C{self.num} WARNING: Failed to capture an image, retrying...")
+                time.sleep(0.1)
+                continue
 
-                        threadStop = Thread(target=thread_attempt_stop, args=())
-                        threadClose = Thread(target=thread_attempt_close, args=())
-                        
-                        # Allow 1 second max for each thread to stop
-                        threadStop.start()
-                        threadStop.join(1)
-                        print("[CAMERA] Camera stop attempted")
-                        threadClose.start()
-                        threadClose.join(1)
-                        print("[CAMERA] Camera close attempted")
-                    except Exception as e:
-                        print("[CAMERA] Error stopping camera, will continue anyway")
-                        print(e)
-                    
-                    self.cam = get_camera(self.num)
-                    self.cam.start()
-                    print("[CAMERA] Camera restarted, continuing", time.time())
-                    
-                self.buffer_thread_id += 1
-                self.first_frame_found = False
-                self.buffer_thread = Thread(target=self.capture_buffer_thread, args=(self.buffer_thread_id,))
-                self.buffer_thread.start()
-                self.last_capture_time = time.time()
-                self.last_buffer_create_time = time.time()
+            if self.processing_conf is not None:
+                self.process_image()
 
-            try:
-                buf = self.buffer_queue.get(timeout=0.5)
-                self.frame = self.cam.helpers.make_array(buf, self.cam.camera_configuration()["main"])
+        self.cam.release()
 
-                self.first_frame_found = True
-                self.last_capture_time = time.time()
+    def resize_image(self, img, target_w=355, target_h=264, offset_x=4, offset_y=104):
+        start_x = (img.shape[1] // 2 - target_w // 2) + offset_x
+        start_y = 0 + offset_y
 
-                if self.processing_conf is not None:
-                    self.process_frame()
-                self.buffer_halt = False
-            except queue.Empty:
-                print("[CAMERA] Buffer capture timed out. Skipping frame")
+        resized = img[start_y:start_y + target_h, start_x:start_x + target_w]
 
-            # Check if no buffer has been added for at least 1 second
-            if time.time() - self.last_capture_time > (1 if self.first_frame_found else 3):
-                print("[CAMERA] WARNING: No buffer added for 1 second, camera stream may be frozen - restarting stream")
-                self.buffer_thread = None
-                self.buffer_halt = True
+        return resized
 
-        self.cam.stop()
-        self.stop_time = time.time()
-    
-    def capture_buffer_thread(self, thread_id):
-        print(f"[CAMERA] Created buffer thread #{thread_id}")
+    def process_image(self):
+        image = self.img
+        if image is None:
+            raise Exception(f"[CAMERA] C{self.num} has no image to process, run .take_image() first")
 
-        while self.stream_running:
-            if thread_id != self.buffer_thread_id:
-                print(f"[CAMERA] Buffer thread #{thread_id} is no longer needed, exiting")
-                break
-
-            buf = self.cam.capture_buffer()
-            
-            # Clear the queue
-            while not self.buffer_queue.empty():
-                self.buffer_queue.get_nowait()
-            
-            self.buffer_queue.put(buf)
-        
-        print(f"[CAMERA] Buffer thread #{thread_id} has exited")
-
-    def process_frame(self):
-        frame = self.frame
-        if frame is None:
-            raise Exception(f"[CAMERA] Camera {self.num} has no frame to process, run .take_image() first")
-        
         if self.processing_conf is None:
-            raise Exception(f"[CAMERA] Camera {self.num} has no conf for processing")
+            raise Exception(f"[CAMERA] C{self.num} has no conf for processing")
 
-        resized = frame[0:429, 0:frame.shape[1]]
+        resized = self.resize_image(image)
         resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
         # Find the black in the image
-        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
         # Scale white values based on the inverse of the calibration map
@@ -198,21 +120,21 @@ class CameraStream:
         # Get the binary image
         black_line_threshold = self.processing_conf["black_line_threshold"]
         binary = ((gray_scaled > black_line_threshold) * 255).astype(np.uint8)
-        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
         # Find green in the image
         hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
         green_turn_hsv_threshold = self.processing_conf["green_turn_hsv_threshold"]
         green = cv2.bitwise_not(cv2.inRange(hsv, green_turn_hsv_threshold[0], green_turn_hsv_threshold[1]))
-        green = cv2.erode(green, np.ones((5,5),np.uint8), iterations=1)
+        green = cv2.erode(green, np.ones((5, 5), np.uint8), iterations=1)
 
         # Find the line, by removing the green from the image (since green looks like black when grayscaled)
-        line = cv2.dilate(binary, np.ones((5,5),np.uint8), iterations=2)
+        line = cv2.dilate(binary, np.ones((5, 5), np.uint8), iterations=2)
         line = cv2.bitwise_or(line, cv2.bitwise_not(green))
 
         # Only set the processed data once it is all populated, to avoid partial data being read
         self.processed = {
-            "raw": frame,
+            "raw": image,
             "resized": resized,
             "gray": gray,
             "gray_scaled": gray_scaled,
@@ -223,11 +145,20 @@ class CameraStream:
         }
 
     def stop(self):
-        print(f"[CAMERA] Stopping stream for Camera {self.num}")
+        print(f"[CAMERA] C{self.num} Stopping stream")
         self.stream_running = False
+
+        if self.capture_thread is not None:
+            self.capture_thread.join()
+
+    def signal_handler(self, signum, frame):
+        print(f"\n[CAMERA] C{self.num} Signal received: {signum}. Initiating graceful shutdown...")
+        self.stop()
+        sys.exit(0)
 
     def set_processing_conf(self, conf):
         self.processing_conf = conf
-        
+
     def get_fps(self):
-        return int(self.frames/(time.time() - self.start_time))
+        duration = time.time() - self.start_time
+        return self.frames / duration
