@@ -13,7 +13,7 @@ with open("calibration.json", "r") as json_file:
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
 
-with open("config2.json", "r") as json_file:
+with open("config.json", "r") as json_file:
     config_data = json.load(json_file)
 
 gui_width = 400
