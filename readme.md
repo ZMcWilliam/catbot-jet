@@ -41,5 +41,4 @@ arm_freq=2000
 ```
 
 ## Other notes:
-- i2c settings: See [NOTE-i2c.md](NOTE-i2c.md)
 - CMPS14 settings: See [NOTE-cmps14.md](NOTE-cmps14.md)
