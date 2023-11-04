@@ -1,19 +1,16 @@
 import time
-import cv2
 import json
-import helper_camera
 import numpy as np
-import threading
-import tkinter as tk
-from tkinter import ttk
+import cv2
+import helper_camera
 
 # Load the calibration map from the JSON file
-with open("calibration.json", "r") as json_file:
+with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
 
-with open("config.json", "r") as json_file:
+with open("config.json", "r", encoding="utf-8") as json_file:
     config_data = json.load(json_file)
 
 gui_width = 400
@@ -28,27 +25,26 @@ btn_txt_size = 0.4
 
 btn_locations = {}
 
-
 cam = None
 
 def draw_btns():
     global selected_tab
-    
+
     cv2.rectangle(btn_img, (0, 0), (gui_width, btn_height), (239, 239, 239), -1)
     for i, tab_id in enumerate(config_data):
         tab = config_data[tab_id]
 
         button_x = i * btn_width
         button_text = tab["title"]
-        
+
         btn_locations[tab_id] = [[button_x + btn_pad, 0], [button_x + btn_width - (btn_pad * 2), btn_height]]
         cv2.rectangle(
-            btn_img, (button_x + btn_pad, 0), 
-            (button_x + btn_width - (btn_pad * 2), btn_height), 
-            (150, 150, 150) if tab_id == selected_tab else (200, 200, 200), 
+            btn_img, (button_x + btn_pad, 0),
+            (button_x + btn_width - (btn_pad * 2), btn_height),
+            (150, 150, 150) if tab_id == selected_tab else (200, 200, 200),
             -1
         )
-        
+
         text_size, _ = cv2.getTextSize(button_text, cv2.FONT_HERSHEY_SIMPLEX, btn_txt_size, 1)
         text_x = button_x + (btn_width - text_size[0] - (btn_pad * 2)) // 2
         text_y = (btn_height + text_size[1]) // 2
@@ -57,8 +53,7 @@ def draw_btns():
 def btn_callback(event, x, y, flags, param):
     global selected_tab
 
-    for tab_id in btn_locations:
-        loc = btn_locations[tab_id]
+    for tab_id, loc in btn_locations.items():
         # Check if the x and y is within the button
         if loc[0][0] <= x and x <= loc[1][0] and loc[0][1] <= y and y <= loc[1][1]:
             if event == 1: # Mouse down
@@ -76,7 +71,7 @@ def show_selected_tab(tab_id):
     btn_img = np.zeros((btn_height, gui_width, 3), dtype=np.uint8)
 
     cv2.namedWindow("Config")
-    
+
     draw_btns()
     cv2.imshow("Config", btn_img)
     cv2.setMouseCallback("Config", btn_callback)
@@ -97,7 +92,7 @@ def show_selected_tab(tab_id):
             ran = conf["range"]
 
             trackbar_title = conf["title"] + (" - " + data_id if data_id != "val" else "")
-            
+
             # The trackbar only supports integers, so make floats 10x larger
             if conf["type"] == "float":
                 val = int(val * 10)
@@ -105,15 +100,15 @@ def show_selected_tab(tab_id):
                 trackbar_title += " (*10)"
 
             cv2.createTrackbar(
-                trackbar_title, 
-                "Config", 
+                trackbar_title,
+                "Config",
                 val,
                 ran[1],
                 create_callback(selected_tab, conf_id, data_id)
             )
 
             print("Created Trackbar: " + trackbar_title)
-    
+
     while True:
         config_values = {
             "calibration_map": calibration_map,
@@ -169,7 +164,7 @@ def show_selected_tab(tab_id):
 
         if cam is None:
             cam = helper_camera.CameraStream(
-                camera_num = 0, 
+                camera_num = 0,
                 processing_conf = {
                     "calibration_map": calibration_map,
                     "black_line_threshold": config_values["black_line_threshold"],
@@ -204,15 +199,15 @@ def show_selected_tab(tab_id):
 
         print(config_values["red_hsv_threshold"])
         img0_red = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1]))
-        img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+        img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
         img0_gray_rescue_calibrated = calibration_map_rescue * img0_gray
         img0_binary_rescue = ((img0_gray_rescue_calibrated > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
-        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
 
         img0_gray_rescue_scaled = img0_gray_rescue_calibrated * (config_values["rescue_binary_gray_scale_multiplier"] - 2.5)
         img0_gray_rescue_scaled = np.clip(img0_gray_rescue_calibrated, 0, 255).astype(np.uint8)
-        
+
         img0_blurred = cv2.medianBlur(img0_gray_rescue_scaled, 9)
 
         circles = cv2.HoughCircles(img0_blurred, cv2.HOUGH_GRADIENT, **{
@@ -228,8 +223,8 @@ def show_selected_tab(tab_id):
         sorted_circles = []
         if circles is not None:
             detected_circles = np.round(circles[0, :]).astype(int)
-            detected_circles = sorted(detected_circles , key = lambda v: [v[1], v[1]],reverse=True)
-            
+            detected_circles = sorted(detected_circles, key = lambda v: [v[1], v[1]], reverse=True)
+
             # If the circle is in the bottom half of the image, check that the radius is greater than 40
             # valid_circles = []
             # for (x, y, r) in detected_circles:
@@ -252,38 +247,37 @@ def show_selected_tab(tab_id):
             for (x, y, r) in detected_circles:
                 for i in range(height_bar_qty):
                     if y >= height_bars[i]:
-                        if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]: 
+                        if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]:
                             height_bar_circles[i].append([x, y, r, i])
                         break
-                
+
                 # Sort the circles in each bar by x position
                 height_bar_circles[i] = sorted(height_bar_circles[i], key = lambda v: [v[0], v[0]])
 
             # Compile circles into a single list, horizontally in height bar (closest to furthest)
             for i in range(height_bar_qty):
                 sorted_circles += height_bar_circles[i]
-            
+
             # Draw horizontal lines for height bars
             for i in range(height_bar_qty):
                 cv2.line(img0_circles, (0, int(height_bars[i])), (img0.shape[1], int(height_bars[i])), (255, 255, 255), 1)
-            
+
             # Draw the sorted circles on the original image
             for i, (x, y, r, bar) in enumerate(sorted_circles):
                 cv2.circle(img0_circles, (x, y), r, (0, 255, 0), 2)
                 cv2.circle(img0_circles, (x, y), 2, (0, 255, 0), 3)
                 print(bar, i, r)
-                cv2.putText(img0_circles, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
+                cv2.putText(img0_circles, f"{bar}-{i}-{r}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
         else:
             cv2.putText(img0_circles, "No circles detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-
         img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
         img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
-        img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+        img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
 
         contours_block = cv2.findContours(img0_binary_rescue_block, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
         contours_block = [{
-            "contour": c, 
+            "contour": c,
             "contourArea": cv2.contourArea(c),
             "boundingRect": cv2.boundingRect(c),
             "touching_sides": [],
@@ -304,10 +298,10 @@ def show_selected_tab(tab_id):
             if y < side_threshold[1]: contours_block[i]["near_sides"].append("top")
             if x + w > img0.shape[1] - side_threshold[1]: contours_block[i]["near_sides"].append("right")
             if y + h > img0.shape[0] - side_threshold[1]: contours_block[i]["near_sides"].append("bottom")
-        
+
         # Filter by area and ensure it doesn't touch the top
         contours_block = [c for c in contours_block if c["contourArea"] > 10000 and "top" not in c["touching_sides"]]
-        
+
         # Sort by area
         contours_block = sorted(contours_block, key=lambda c: c["contourArea"], reverse=True)
 
@@ -321,7 +315,7 @@ def show_selected_tab(tab_id):
             cy = contour_block["boundingRect"][1] + contour_block["boundingRect"][3] / 2
 
             cv2.circle(img0, (int(cx), int(cy)), 5, (0, 0, 255), -1)
-        
+
         for req_img in config_data[selected_tab]["images"]:
             img0_preview = None
 
@@ -344,7 +338,7 @@ def show_selected_tab(tab_id):
             cv2.imshow(req_img, img0_preview)
 
         k = cv2.waitKey(1)
-        if (k & 0xFF == ord('q')):
+        if k & 0xFF == ord('q'):
             break
 
 show_selected_tab(selected_tab)

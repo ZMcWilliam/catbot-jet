@@ -1,22 +1,22 @@
-#                                ██████╗ █████╗ ████████╗██████╗  ██████╗ ████████╗    ███╗   ██╗███████╗ ██████╗  
-#   _._     _,-'""`-._          ██╔════╝██╔══██╗╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝    ████╗  ██║██╔════╝██╔═══██╗ 
-#   (,-.`._,'(       |\`-/|     ██║     ███████║   ██║   ██████╔╝██║   ██║   ██║       ██╔██╗ ██║█████╗  ██║   ██║ 
-#       `-.-' \ )-`( , o o)     ██║     ██╔══██║   ██║   ██╔══██╗██║   ██║   ██║       ██║╚██╗██║██╔══╝  ██║   ██║ 
-#           `-    \`_`"'-       ╚██████╗██║  ██║   ██║   ██████╔╝╚██████╔╝   ██║       ██║ ╚████║███████╗╚██████╔╝ 
-#                                ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝       ╚═╝  ╚═══╝╚══════╝ ╚═════╝  
+#                                ██████╗ █████╗ ████████╗██████╗  ██████╗ ████████╗    ███╗   ██╗███████╗ ██████╗
+#   _._     _,-'""`-._          ██╔════╝██╔══██╗╚══██╔══╝██╔══██╗██╔═══██╗╚══██╔══╝    ████╗  ██║██╔════╝██╔═══██╗
+#   (,-.`._,'(       |\`-/|     ██║     ███████║   ██║   ██████╔╝██║   ██║   ██║       ██╔██╗ ██║█████╗  ██║   ██║
+#       `-.-' \ )-`( , o o)     ██║     ██╔══██║   ██║   ██╔══██╗██║   ██║   ██║       ██║╚██╗██║██╔══╝  ██║   ██║
+#           `-    \`_`"'-       ╚██████╗██║  ██║   ██║   ██████╔╝╚██████╔╝   ██║       ██║ ╚████║███████╗╚██████╔╝
+#                                ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝       ╚═╝  ╚═══╝╚══════╝ ╚═════╝
 
-# RoboCup Junior Rescue Line 2023 - Bordeaux, France
-# https://github.com/zmcwilliam/catbot-rcji
+# RoboCup Junior Rescue Line 2023 - Asia Pacific (South Korea)
+# https://github.com/zmcwilliam/catbot-rcjap
 
 import time
 import os
 import sys
 import json
 import traceback
-import board
 import math
-import cv2
 import signal
+import board
+import cv2
 import busio
 import gpiozero
 import numpy as np
@@ -52,7 +52,7 @@ PORT_USS_ECHO = {
 max_error = 285                     # Maximum error value when calculating a percentage
 max_angle = 90                      # Maximum angle value when calculating a percentage
 error_weight = 0.5                  # Weight of the error value when calculating the PID input
-angle_weight = 1-error_weight       # Weight of the angle value when calculating the PID input
+angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
 
 KP = 1.3                            # Proportional gain
@@ -67,12 +67,12 @@ evac_cam_angle = 7                  # Angle of the camera when evacuating
 # ---------------------
 # LOAD STORED JSON DATA
 # ---------------------
-with open("calibration.json", "r") as json_file:
+with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
 
-with open("config.json", "r") as json_file:
+with open("config.json", "r", encoding="utf-8") as json_file:
     config_data = json.load(json_file)
 
 config_values = {
@@ -95,7 +95,7 @@ has_moved_windows = False
 program_sleep_time = 0.01
 
 current_steering = 0
-last_line_pos = np.array([100,100])
+last_line_pos = np.array([100, 100])
 
 turning = None
 last_green_time = 0
@@ -141,8 +141,8 @@ obstacle_dir = np.random.choice([-1, 1])
 i2c = busio.I2C(board.SCL, board.SDA)
 
 cam = helper_camera.CameraStream(
-    camera_num = 0, 
-    processing_conf = {
+    camera_num=0,
+    processing_conf={
         "calibration_map": calibration_map,
         "black_line_threshold": config_values["black_line_threshold"],
         "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
@@ -170,7 +170,7 @@ cmps = CMPS14(1, 0x61)
 vl6180x = adafruit_vl6180x.VL6180X(i2c)
 vl6180x_gain = adafruit_vl6180x.ALS_GAIN_1 # See test_tof.py for more values
 
-def exit_gracefully(signum = None, frame = None) -> None:
+def exit_gracefully(signum=None, frame=None) -> None:
     """
     Handles program exit gracefully. Called by SIGINT signal.
 
@@ -209,9 +209,9 @@ def debug_state(mode=None) -> bool:
     Returns:
         bool: False for OFF, True for ON
     """
-    if mode == "rescue": 
+    if mode == "rescue":
         return True
-    
+
     return DEBUGGER and debug_switch.value
 
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
@@ -236,11 +236,11 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
             print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
             m.stop_all()
             return True
-        
+
         max_speed = 50 # Speed to rotate when error is 180
         min_speed = 25 # Speed to rotate when error is 0
 
-        rotate_speed = min_speed + ((max_speed - min_speed)/math.sqrt(180)) * math.sqrt(error)
+        rotate_speed = min_speed + ((max_speed - min_speed) / math.sqrt(180)) * math.sqrt(error)
 
         # Rotate in the direction closest to the bearing
         if (current_bearing - target_bearing) % 360 < 180:
@@ -261,8 +261,8 @@ def avoid_obstacle() -> None:
     It will not work for varying sizes of obstacles, and hence should be worked on if time permits, but it's fine for now.
     """
     global obstacle_dir
-    
-    # Check if it's actually an obstacle by using the camera        changed_black_contour = False
+
+    # Check if it's actually an obstacle by using the camera
     frame_processed = cam.read_stream_processed()
     while (frame_processed is None or frame_processed["resized"] is None):
         print("Waiting for image...")
@@ -276,7 +276,7 @@ def avoid_obstacle() -> None:
     img0_hsv = frame_processed["hsv"]
 
     img0_obstacle = cv2.inRange(img0_hsv, config_values["obstacle_hsv_threshold"][0], config_values["obstacle_hsv_threshold"][1])
-    img0_obstacle = cv2.dilate(img0_obstacle, np.ones((5,5),np.uint8), iterations=2)
+    img0_obstacle = cv2.dilate(img0_obstacle, np.ones((5, 5), np.uint8), iterations=2)
 
     obstacle_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_obstacle, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
     obstacle_contours = sorted(obstacle_contours, key=lambda contour: contour[1], reverse=True)
@@ -286,7 +286,7 @@ def avoid_obstacle() -> None:
         # EVACUATION ZONE PROBABLY
         print("DETECTED EVAC")
         m.run_tank_for_time(-40, -40, 500)
-        
+
         time.sleep(2)
         # Random rotate dir
         evac_rotate_dir = np.random.choice([-1, 1])
@@ -296,7 +296,7 @@ def avoid_obstacle() -> None:
         run_evac()
 
     # Avoid the obstacle
-    
+
     obstacle_dir = -1 if obstacle_dir == 1 else 1
     m.run_tank_for_time(-40, -40, 900)
     align_to_bearing(cmps.read_bearing_16bit() - (70 * obstacle_dir), 1, debug_prefix="OBSTACLE ALIGN: ")
@@ -312,7 +312,7 @@ def avoid_obstacle() -> None:
             m.stop_all()
             time.sleep(0.1)
             continue
-        
+
         frame_processed = cam.read_stream_processed()
 
         img0_line_not = cv2.bitwise_not(frame_processed["line"])
@@ -322,7 +322,7 @@ def avoid_obstacle() -> None:
         if len(black_contours_filtered) >= 1:
             print("[OBSTACLE] Found Line")
             break
-    
+
     m.stop_all()
     time.sleep(0.2)
 
@@ -341,7 +341,7 @@ def approach_victim(time_to_approach):
     time.sleep(0.2)
     servo["cam"].angle = -80 # Ensure cam is out of the way before we do lifting actions
     m.run_tank_for_time(-40, -40, 800)
-    
+
     if check_found_ball():
         print("Successful capture, lifting")
         servo["lift"].angle = -80
@@ -368,15 +368,14 @@ def check_found_ball():
     try:
         range_mm = vl6180x.range
         light_lux = vl6180x.read_lux(adafruit_vl6180x.ALS_GAIN_1)
-        
+
         # TODO: Check ball type (However as we don't handle this differently, there's currently no point)
         print(f"Ball: {range_mm}mm, {light_lux}lux")
         if range_mm < 5:
             ball_found_qty[0] += 1
             return True
-        else:
-            return False
-    except:
+        return False
+    except Exception:
         print("ERR BALL")
         ball_found_qty[0] += 1
         return True
@@ -406,7 +405,7 @@ def run_evac():
         frames += 1
 
         if frames % 20 == 0 and frames != 0:
-            fpsLoop = int(frames/(time.time()-fpsTime))
+            fpsLoop = int(frames / (time.time() - fpsTime))
             fpsCamera = cam.get_fps()
 
             if frames > 500:
@@ -414,7 +413,6 @@ def run_evac():
                 frames = 0
             print(f"Processing FPS: {fpsLoop} | Camera FPS: {cam.get_fps()} | Sleep time: {int(program_sleep_time*1000)}")
 
-        changed_black_contour = False
         frame_processed = cam.read_stream_processed()
         if (frame_processed is None or frame_processed["resized"] is None):
             print("Waiting for image...")
@@ -430,18 +428,13 @@ def run_evac():
             continue
 
         img0 = frame_processed["resized"]
-        img0_clean = img0.copy() # Used for displaying the image without any overlays
 
         img0_gray = frame_processed["gray"]
-        img0_binary = frame_processed["binary"]
         img0_hsv = frame_processed["hsv"]
-        img0_green = frame_processed["green"]
-        img0_line = frame_processed["line"]
-        
-        
+
         img0_gray_rescue_calibrated = calibration_map_rescue * img0_gray
         img0_binary_rescue = ((img0_gray_rescue_calibrated > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
-        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
         img0_gray_rescue_scaled = img0_gray_rescue_calibrated * (config_values["rescue_binary_gray_scale_multiplier"] - 2.5)
         img0_gray_rescue_scaled = np.clip(img0_gray_rescue_calibrated, 0, 255).astype(np.uint8)
@@ -453,29 +446,29 @@ def run_evac():
         segment_width = 40
 
         for x in range(0, img0_binary_rescue.shape[1], segment_width):
-            segment = img0_binary_rescue[:, x:x+segment_width]
+            segment = img0_binary_rescue[:, x:x + segment_width]
 
             # Find the lowest point in the segment that has a full column of white pixels at least 10 pixels high
             bottom_white_column = -1
             for y in range(0, img0_binary_rescue.shape[0] - 10):
-                if np.all(segment[y:y+10, :] == 255):
+                if np.all(segment[y:y + 10, :] == 255):
                     bottom_white_column = y
                     break
 
             # Set all pixels below this column to black
             if bottom_white_column != -1:
-                img0_binary_rescue[:bottom_white_column:, x:x+segment_width] = 255
-                img0_blurred[:bottom_white_column:, x:x+segment_width] = 255
+                img0_binary_rescue[:bottom_white_column:, x:x + segment_width] = 255
+                img0_blurred[:bottom_white_column:, x:x + segment_width] = 255
 
         # -------------
         # INITIAL ENTER
         # -------------
         if rescue_mode == "init":
-            # TODO: Optimally, this should try and use the ultrasonic sensor 
+            # TODO: Optimally, this should try and use the ultrasonic sensor
             #       to get to a decent spot in the middle of the evac zone
             # For now, just drive forward for a bit
             m.run_tank_for_time(60, 60, 1500)
-            
+
             # Spin around to try and get us off any wall
             align_to_bearing(cmps.read_bearing_16bit() - 180, 7, debug_prefix="EVAC Align - ")
             align_to_bearing(cmps.read_bearing_16bit() - 90, 7, debug_prefix="EVAC Align - ")
@@ -496,8 +489,6 @@ def run_evac():
 
             ball_found_qty = [0, 0]
             rescue_mode = "victim"
-
-            continue
 
         # ------------
         # VICTIM STUFF
@@ -529,8 +520,8 @@ def run_evac():
             if circles is not None:
                 # Round the circle parameters to integers
                 detected_circles = np.round(circles[0, :]).astype(int)
-                detected_circles = sorted(detected_circles , key = lambda v: [v[1], v[1]],reverse=True)
-                
+                detected_circles = sorted(detected_circles, key = lambda v: [v[1], v[1]], reverse=True)
+
                 # If the circle is in the bottom half of the image, check that the radius is greater than 40
                 # valid_circles = []
                 # for (x, y, r) in detected_circles:
@@ -553,26 +544,26 @@ def run_evac():
                 for (x, y, r) in detected_circles:
                     for i in range(height_bar_qty):
                         if y >= height_bars[i]:
-                            if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]: 
+                            if height_bar_minRadius[i] <= r <= height_bar_maxRadius[i]:
                                 height_bar_circles[i].append([x, y, r, i])
                             break
-                    
+
                     # Sort the circles in each bar by x position
                     height_bar_circles[i] = sorted(height_bar_circles[i], key = lambda v: [v[0], v[0]])
 
                 # Compile circles into a single list, horizontally in height bar (closest to furthest)
                 for i in range(height_bar_qty):
                     sorted_circles += height_bar_circles[i]
-                
+
                 # Draw horizontal lines for height bars
                 for i in range(height_bar_qty):
                     cv2.line(img0, (0, int(height_bars[i])), (img0.shape[1], int(height_bars[i])), (255, 255, 255), 1)
-                
+
                 # Draw the sorted circles on the original image
-                for i, (x, y, r, bar) in enumerate(sorted_circles):
+                for i, (x, y, r, height_bar) in enumerate(sorted_circles):
                     cv2.circle(img0, (x, y), r, (0, 255, 0), 2)
                     cv2.circle(img0, (x, y), 2, (0, 255, 0), 3)
-                    cv2.putText(img0, f"{bar}-{i}-{r}", (x , y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
+                    cv2.putText(img0, f"{height_bar}-{i}-{r}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
 
             if debug_state("rescue"):
                 # cv2.imshow("img0_blurred", img0_blurred)
@@ -582,8 +573,7 @@ def run_evac():
                 cv2.imshow("img0", cv2.resize(img0, (0, 0), fx=0.8, fy=0.7))
 
                 k = cv2.waitKey(1)
-                if (k & 0xFF == ord('q')):
-                    # pr.print_stats(SortKey.TIME)
+                if k & 0xFF == ord('q'):
                     program_active = False
                     break
 
@@ -612,15 +602,15 @@ def run_evac():
                     print("Approaching with extra distance")
                     approach_victim(1.5)
                     continue
-                elif last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
+
+                if last_circle_pos is not None and last_circle_pos[1] <= 340 and abs(last_circle_pos[0] - (img0.shape[1] / 2)) < 250:
                     # Did the circle vanish? Lets double check...
                     if circle_check_counter < 3:
                         print("Circle may have vanished, double checking")
                         circle_check_counter += 1
                         time.sleep(0.3)
                         continue
-                    else:
-                        print("Circle vanished")
+                    print("Circle vanished")
                 last_circle_pos = None
                 print("Rotating")
                 m.run_tank_for_time(60, -60, 200)
@@ -633,11 +623,11 @@ def run_evac():
             # Find the contours of the rescue blocks
             img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
             img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
-            img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13,13),np.uint8))
+            img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
 
             contours_block = cv2.findContours(img0_binary_rescue_block, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
             contours_block = [{
-                "contour": c, 
+                "contour": c,
                 "contourArea": cv2.contourArea(c),
                 "boundingRect": cv2.boundingRect(c),
                 "touching_sides": [],
@@ -658,10 +648,10 @@ def run_evac():
                 if y < side_threshold[1]: contours_block[i]["near_sides"].append("top")
                 if x + w > img0.shape[1] - side_threshold[1]: contours_block[i]["near_sides"].append("right")
                 if y + h > img0.shape[0] - side_threshold[1]: contours_block[i]["near_sides"].append("bottom")
-            
+
             # Filter by area and ensure it doesn't touch the top
             contours_block = [c for c in contours_block if c["contourArea"] > 10000 and "top" not in c["touching_sides"]]
-            
+
             # Sort by area
             contours_block = sorted(contours_block, key=lambda c: c["contourArea"], reverse=True)
 
@@ -700,7 +690,7 @@ def run_evac():
                         servo["gate"].angle = -90
                         m.run_tank_for_time(35, 35, 1000)
                         time.sleep(1)
-                    
+
                     m.run_tank_for_time(35, 35, 200)
                     print("Block on bottom - approach")
                 else:
@@ -711,13 +701,13 @@ def run_evac():
                     if (
                         ("left" in contour["near_sides"] and "right" in contour["near_sides"])
                         or (
-                            abs(cx - (img0.shape[1]/2)) < 50
+                            abs(cx - (img0.shape[1] / 2)) < 50
                             and (("left" in contour_block["touching_sides"]) + ("right" in contour_block["touching_sides"])) != 1
                         )
                     ):
                         m.run_tank(35, 35)
                         print("Block in middle - approach")
-                    elif cx < (img0.shape[1]/2) or "left" in contour_block["touching_sides"]:
+                    elif cx < (img0.shape[1] / 2) or "left" in contour_block["touching_sides"]:
                         m.run_tank(10, 35)
                         print("Block on left - turn left")
                     else:
@@ -725,7 +715,7 @@ def run_evac():
                         print("Block on right - turn right")
             else:
                 m.run_tank_for_time(60, -60, 100)
-            
+
             servo["claw"].angle = -90
 
             if servo["lift"].angle > -60:
@@ -747,8 +737,7 @@ def run_evac():
                 cv2.imshow("img0", cv2.resize(img0, (0, 0), fx=0.8, fy=0.7))
 
                 k = cv2.waitKey(1)
-                if (k & 0xFF == ord('q')):
-                    # pr.print_stats(SortKey.TIME)
+                if k & 0xFF == ord('q'):
                     program_active = False
                     break
 # ------------------------
@@ -785,7 +774,7 @@ while program_active:
         frames += 1
 
         if frames % 30 == 0 and frames != 0:
-            fpsLoop = int(frames/(time.time()-fpsTime))
+            fpsLoop = int(frames / (time.time() - fpsTime))
             fpsCamera = cam.get_fps()
 
             # Try to balance out the processing time and the camera FPS
@@ -825,10 +814,10 @@ while program_active:
             m.stop_all()
             time.sleep(0.1)
             continue
-        
+
         changed_black_contour = False
         frame_processed = cam.read_stream_processed()
-        
+
         # We need to .copy() the images because we are going to be modifying them
         # This prevents us from reading a modified image on the next loop, and things breaking
 
@@ -841,7 +830,7 @@ while program_active:
         img0_hsv = frame_processed["hsv"].copy()
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
-        
+
         # -----------
 
         raw_white_contours, white_hierarchy = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -849,22 +838,21 @@ while program_active:
         # Filter white contours based on area
         white_contours = []
         for contour in raw_white_contours:
-            if (cv2.contourArea(contour) > 1000):
+            if cv2.contourArea(contour) > 1000:
                 white_contours.append(contour)
 
-        if (len(white_contours) == 0):
+        if len(white_contours) == 0:
             print("No white contours found")
             continue
 
-        
         # Find black contours
         # If there are no black contours, skip the rest of the loop
         img0_line_not = cv2.bitwise_not(img0_line)
         black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        if (len(black_contours) == 0):
+        if len(black_contours) == 0:
             print("No black contours found")
             continue
-        
+
         # -----------
         # GREEN TURNS
         # -----------
@@ -873,21 +861,21 @@ while program_active:
         black_contours_turn = None
 
         # print("Green: ", is_there_green)
-        
+
         img0_line_new = img0_line.copy()
 
         # Check if there is a significant amount of green pixels
-        if is_there_green > 4000: #and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
+        if is_there_green > 4000: # and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
             changed_img0_line = None
 
             unfiltered_green_contours, green_hierarchy = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
             green_contours_filtered = [contour for contour in unfiltered_green_contours if cv2.contourArea(contour) > 1000]
             white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
-            
+
             followable_green = []
             for g_contour in green_contours_filtered:
-                cv2.drawContours(img0, [contour], -1, (0,255,0), 2)
+                # cv2.drawContours(img0, [g_contour], -1, (0, 255, 0), 2)
 
                 # Find which white contour contains the green contour
                 containing_white_contour = None
@@ -908,7 +896,7 @@ while program_active:
                         })
                         if len(followable_green) >= 2:
                             break # There should never be more than 2 followable green contours, so we can stop looking for more
-                
+
             if len(followable_green) == 2 and not turning:
                 # We have found 2 followable green contours, this means we need turn around 180 degrees
                 print("DOUBLE GREEN")
@@ -931,11 +919,11 @@ while program_active:
                 if len(followable_green) == 1:
                     can_follow_green = True
                     if not turning:
-                        # With double green, we may briefly see only 1 green contour while entering. 
+                        # With double green, we may briefly see only 1 green contour while entering.
                         # Hence, add some delay to when we start turning to prevent this and ensure we can see all green contours
                         if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
                         if time.time() - initial_green_time < 0.3: can_follow_green = False
-                    
+
                     if can_follow_green:
                         selected = followable_green[0]
                         # Dilate selected["w"] to make it larger, and then use it as a mask
@@ -945,7 +933,7 @@ while program_active:
                         # Mask the line image with the dilated white contour
                         img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
                         # Erode the line image to remove slight inconsistencies we don't want
-                        img0_line_new = cv2.erode(img0_line_new, np.ones((3,3), np.uint8), iterations=2)
+                        img0_line_new = cv2.erode(img0_line_new, np.ones((3, 3), np.uint8), iterations=2)
 
                         changed_img0_line = img0_line_new
 
@@ -958,13 +946,13 @@ while program_active:
                             else:
                                 print("Start Turn: right")
                                 turning = "RIGHT"
-                
-            if (changed_img0_line is not None):
+
+            if changed_img0_line is not None:
                 print("Green caused a change in the line")
                 img0_line_new = changed_img0_line
                 new_black_contours, new_black_hierarchy = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                cv2.drawContours(img0, new_black_contours, -1, (0,0,255), 2)
-                if (len(new_black_contours) > 0):
+                cv2.drawContours(img0, new_black_contours, -1, (0, 0, 255), 2)
+                if len(new_black_contours) > 0:
                     black_contours = new_black_contours
                     black_hierarchy = new_black_hierarchy
                 else:
@@ -976,12 +964,12 @@ while program_active:
         elif turning is not None and last_green_time + 1 < time.time():
             turning = None
             print("No longer turning")
-        
+
         # -----------------
         # STOP ON RED CHECK
         # -----------------
         img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
-        img0_red = cv2.dilate(img0_red, np.ones((5,5),np.uint8), iterations=2)
+        img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
         red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
         red_contours = sorted(red_contours, key=lambda contour: contour[1], reverse=True)
@@ -1004,7 +992,7 @@ while program_active:
                 if debug_state():
                     cv2.imshow("img0_red", img0_red)
                     cv2.waitKey(1)
-                    
+
                 if red_stop_check > 3:
                     print("DETECTED RED STOP 3 TIMES, STOPPING")
                     break
@@ -1017,7 +1005,7 @@ while program_active:
         # INTERSECTIONS
         # -------------
         if not turning:
-            # Filter white contours to have a minimum area before we accept them 
+            # Filter white contours to have a minimum area before we accept them
             white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
 
             if len(white_contours_filtered) == 2:
@@ -1042,7 +1030,7 @@ while program_active:
                 if current_linefollowing_state is None or "2-top-ng" in current_linefollowing_state:
                     contour_L_2_top = contour_L_vert_sort[:2]
                     contour_R_2_top = contour_R_vert_sort[:2]
-                    
+
                     combined_top_points = contour_L_2_top + contour_R_2_top
                     top_dists = [p[1] for p in combined_top_points]
 
@@ -1069,7 +1057,7 @@ while program_active:
                 else: # We are exiting an intersection
                     contour_L_2_bottom = contour_L_vert_sort[2:]
                     contour_R_2_bottom = contour_R_vert_sort[2:]
-                    
+
                     combined_bottom_points = contour_L_2_bottom + contour_R_2_bottom
                     bottom_dists = [img0.shape[0] - p[1] for p in combined_bottom_points]
 
@@ -1081,7 +1069,7 @@ while program_active:
                     elif sum([d < 120 for d in bottom_dists]) == 4:
                         current_linefollowing_state = "2-bottom-ng"
                         highest_point = sorted(combined_bottom_points, key=lambda point: point[1])[0]
-                        
+
                         img0_line_new[highest_point[1] - 3:, :] = 255
                         changed_black_contour = cv2.bitwise_not(img0_line_new)
                     # If we are not at the bottom, then we are probably still in the intersection... we shouldn't really end up here, so just reset the state
@@ -1089,14 +1077,14 @@ while program_active:
                         current_linefollowing_state = None
                         print("Exited intersection - but not really?")
 
-            elif (len(white_contours_filtered) == 3):
+            elif len(white_contours_filtered) == 3:
                 # We are entering a 3-way intersection
                 if not current_linefollowing_state or "2-ng" in current_linefollowing_state:
                     current_linefollowing_state = "3-ng-en"
                 # We are exiting a 4-way intersection
                 if "4-ng" in current_linefollowing_state:
                     current_linefollowing_state = "3-ng-4-ex"
-                
+
                 intersection_state_debug = ["3-ng", time.time()]
                 # Get the center of each contour
                 white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
@@ -1109,8 +1097,8 @@ while program_active:
 
                 # Middle of contour centres
                 mid_point = (
-                    int(sum([contour[1][0] for contour in sorted_contours_horz])/len(sorted_contours_horz)),
-                    int(sum([contour[1][1] for contour in sorted_contours_horz])/len(sorted_contours_horz))
+                    int(sum([contour[1][0] for contour in sorted_contours_horz]) / len(sorted_contours_horz)),
+                    int(sum([contour[1][1] for contour in sorted_contours_horz]) / len(sorted_contours_horz))
                 )
 
                 # Get the closest point of the approx contours to the mid point
@@ -1119,10 +1107,10 @@ while program_active:
 
                 # Get the closest points of each approx contour to the mid point, and store the index of the contour to back reference later
                 closest_points = [
-                    [closestPointToMidPoint(approx_contour, mid_point), i] 
+                    [closestPointToMidPoint(approx_contour, mid_point), i]
                     for i, approx_contour in enumerate(approx_contours)
                 ]
-                
+
                 # Get the closest points, sorted by distance to mid point
                 sorted_closest_points = sorted(closest_points, key=lambda point: ck.pointDistance(point[0], mid_point))
                 closest_2_points_vert_sort = sorted(sorted_closest_points[:2], key=lambda point: point[0][1])
@@ -1130,14 +1118,17 @@ while program_active:
                 # If a point is touching the top/bottom of the screen, it is quite possibly invalid and will cause some issues with cutting
                 # So, we will find the next best point, the point inside the other contour that is at the top of the screen, and is closest to the X value of the other point
                 for i, point in enumerate(closest_2_points_vert_sort):
-                    if point[0][1] > img0_line_new.shape[0]-10 or point[0][1] < 10:
-                        # Find the closest point to the x value of the other point                    
-                        other_point_x = closest_2_points_vert_sort[1-i][0][0]
-                        other_point_approx_contour_i = closest_2_points_vert_sort[1-i][1]
+                    if point[0][1] > img0_line_new.shape[0] - 10 or point[0][1] < 10:
+                        # Find the closest point to the x value of the other point
+                        other_point_x = closest_2_points_vert_sort[1 - i][0][0]
+                        other_point_approx_contour_i = closest_2_points_vert_sort[1 - i][1]
 
-                        closest_points_to_other_x = sorted(approx_contours[other_point_approx_contour_i], key=lambda point: abs(point[0] - other_point_x))
+                        closest_points_to_other_x = sorted(
+                            approx_contours[other_point_approx_contour_i],
+                            key=lambda point, x=other_point_x: abs(point[0] - x)
+                        )
                         new_valid_points = [
-                            point for point in closest_points_to_other_x 
+                            point for point in closest_points_to_other_x
                             if not np.isin(point, [
                                 closest_2_points_vert_sort[0][0],
                                 closest_2_points_vert_sort[1][0]
@@ -1147,11 +1138,11 @@ while program_active:
                             # print(f"Point {i} is at an edge, but no new valid points were found")
                             continue
 
-                        closest_2_points_vert_sort = sorted([[new_valid_points[0], other_point_approx_contour_i], closest_2_points_vert_sort[1-i]], key=lambda point: point[0][1])
+                        closest_2_points_vert_sort = sorted([[new_valid_points[0], other_point_approx_contour_i], closest_2_points_vert_sort[1 - i]], key=lambda point: point[0][1])
                         # print(f"Point {i} is at an edge, replacing with {new_valid_points[0]}")
 
                 split_line = [point[0] for point in closest_2_points_vert_sort]
-                
+
                 contour_center_point_sides = [[], []] # Left, Right
                 for i, contour in enumerate(sorted_contours_horz):
                     if split_line[1][0] == split_line[0][0]:  # Line is vertical, so x is constant
@@ -1166,7 +1157,7 @@ while program_active:
                             side = "right" if slope > 0 else "left"
 
                     contour_center_point_sides[side == "left"].append(contour[1])
-                
+
                 # Get the edges that the contour not relevant to the closest points touches
                 edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
 
@@ -1176,7 +1167,7 @@ while program_active:
                 # This is a janky solution to detecting evac entry... it should work for now, but definitely should be looked at.
                 if len(black_contours) >= 1 and edges_big == ["left", "right", "top"]:
                     edges_black = sorted(ck.getTouchingEdges(ck.simplifiedContourPoints(black_contours[0], 0.03), img0_binary.shape))
-                    
+
                     if edges_black == ["bottom", "left", "right"]:
                         m.stop_all()
                         evac_detect_check += 1
@@ -1190,10 +1181,10 @@ while program_active:
                         if evac_detect_check >= 3:
                             print("STARTING EVAC")
                             run_evac()
-                        
+
                         time.sleep(0.1)
                         continue
-                
+
                 evac_detect_check = 0
 
                 # --- Rest of 3WC Intersections
@@ -1201,7 +1192,7 @@ while program_active:
                 # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
                 cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])
 
-                # If we are just entering a 3-way intersection, and the 'big contour' does not connect to the bottom, 
+                # If we are just entering a 3-way intersection, and the 'big contour' does not connect to the bottom,
                 # we may be entering a 4-way intersection... so follow the vertical line
                 if len(edges_big) >= 2 and "bottom" not in edges_big and "-en" in current_linefollowing_state:
                     cut_direction = not cut_direction
@@ -1225,18 +1216,18 @@ while program_active:
                 # CutMaskWithLine will fail if the line is flat, so we need to make sure that the line is not flat
                 if closest_2_points_vert_sort[0][0][1] == closest_2_points_vert_sort[1][0][1]:
                     closest_2_points_vert_sort[0][0][1] += 1 # Move the first point up by 1 pixel
-                    
+
                 img0_line_new = helper_intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
                 changed_black_contour = cv2.bitwise_not(img0_line_new)
 
-            elif (len(white_contours_filtered) == 4):
+            elif len(white_contours_filtered) == 4:
                 intersection_state_debug = ["4-ng", time.time()]
                 # Get the center of each contour
                 white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
 
                 # Sort the contours from left to right - Based on the centre of the contour's horz val
                 sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
-                
+
                 # Sort the contours from top to bottom, for each side of the image - Based on the centre of the contour's vert val
                 contour_BL, contour_TL = tuple(sorted(sorted_contours_horz[:2], reverse=True, key=lambda contour: contour[1][1]))
                 contour_BR, contour_TR = tuple(sorted(sorted_contours_horz[2:], reverse=True, key=lambda contour: contour[1][1]))
@@ -1256,7 +1247,7 @@ while program_active:
                 # Get the closest point of the approx contours to the mid point
                 def closestPointToMidPoint(approx_contour, mid_point):
                     return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
-                
+
                 closest_BL = closestPointToMidPoint(approx_BL, mid_point)
                 closest_TL = closestPointToMidPoint(approx_TL, mid_point)
                 closest_BR = closestPointToMidPoint(approx_BR, mid_point)
@@ -1284,11 +1275,11 @@ while program_active:
                 current_linefollowing_state = "4-ng"
                 changed_black_contour = cv2.bitwise_not(img0_line_new)
 
-        if (changed_black_contour is not False):
+        if changed_black_contour is not False:
             print("Changed black contour, LF State: ", current_linefollowing_state)
-            cv2.drawContours(img0, black_contours, -1, (0,0,255), 2)
+            cv2.drawContours(img0, black_contours, -1, (0, 0, 255), 2)
             new_black_contours, new_black_hierarchy = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            if (len(new_black_contours) > 0):
+            if len(new_black_contours) > 0:
                 black_contours = new_black_contours
                 black_hierarchy = new_black_hierarchy
             else:
@@ -1305,9 +1296,9 @@ while program_active:
         if len(sorted_black_contours) == 0:
             print("No black contours found")
 
-            # This is a botchy temp fix so that sometimes we can handle the case where we lose the line, 
+            # This is a botchy temp fix so that sometimes we can handle the case where we lose the line,
             # and other times we can handle gaps in the line
-            # TODO: Remove this, and implement a proper line following fix 
+            # TODO: Remove this, and implement a proper line following fix
             if not no_black_contours:
                 no_black_contours_mode = "straight" if no_black_contours_mode == "steer" else "steer"
                 no_black_contours = True
@@ -1320,20 +1311,20 @@ while program_active:
             new_steer = current_steering if no_black_contours_mode == "steer" else 0
             m.run_steer(follower_speed, 100, new_steer)
 
-            preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
-            
+            preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
+
             if debug_state():
                 cv2.imshow("img0 - NBC", preview_image_img0)
                 k = cv2.waitKey(1)
-                if (k & 0xFF == ord('q')):
+                if k & 0xFF == ord('q'):
                     program_active = False
                     break
             continue
 
         no_black_contours = False
-        
+
         chosen_black_contour = sorted_black_contours[0]
-        
+
         # Update the reference position for subsequent calculations
         last_line_pos = np.array([chosen_black_contour[1][0][0], chosen_black_contour[1][0][1]])
 
@@ -1341,7 +1332,7 @@ while program_active:
         black_bounding_box = np.intp(cv2.boxPoints(chosen_black_contour[1]))
 
         # Error (distance from the center of the image) and angle (of the line) of the chosen contour
-        black_contour_error = int(last_line_pos[0] - (img0.shape[1]/2))
+        black_contour_error = int(last_line_pos[0] - (img0.shape[1] / 2))
 
         # Sort the black bounding box points based on their y-coordinate (bottom to top)
         vert_sorted_black_bounding_points = sorted(black_bounding_box, key=lambda point: -point[1])
@@ -1371,28 +1362,28 @@ while program_active:
                 isBigTurn = 2
 
         if isBigTurn == 1 and black_contour_angle_new > 0 or isBigTurn == 2 and black_contour_angle_new < 0:
-            black_contour_angle_new = black_contour_angle_new*-1
-            
-        current_position = (black_contour_angle_new/max_angle)*angle_weight+(black_contour_error/max_error)*error_weight
+            black_contour_angle_new = black_contour_angle_new * -1
+
+        current_position = (black_contour_angle_new / max_angle) * angle_weight + (black_contour_error / max_error) * error_weight
         current_position *= 100
 
         # The closer the topmost point is to the bottom of the screen, the more we want to turn
         topmost_point = sorted(black_bounding_box, key=lambda point: point[1])[0]
-        extra_pos = ((topmost_point[1]/img0.shape[1]) * 10)
-        if (isBigTurn and extra_pos > 1):
+        extra_pos = (topmost_point[1] / img0.shape[1]) * 10
+        if isBigTurn and extra_pos > 1:
             current_position *= min(0.7 * extra_pos, 1)
-        
+
         # PID stuff
         error = -current_position
 
         timeDiff = time.time() - current_time
-        if (timeDiff == 0):
-            timeDiff = 1/10
-        proportional = KP*(error)
-        pid_integral += KI*error*timeDiff
-        derivative = KD*(error-pid_last_error)/timeDiff
+        if timeDiff == 0:
+            timeDiff = 1 / 10
+        proportional = KP * error
+        pid_integral += KI * error * timeDiff
+        derivative = KD * (error - pid_last_error) / timeDiff
         current_steering = -(proportional + pid_integral + derivative)
-        
+
         pid_last_error = error
         current_time = time.time()
 
@@ -1401,7 +1392,7 @@ while program_active:
         if current_pitch > 180 and current_pitch < 240:
             if time_since_ramp_start == 0:
                 time_since_ramp_start = time.time()
-            print(f"RAMP ({int(time.time() - time_since_ramp_start)})") 
+            print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
             if time.time() - time_since_ramp_start > 18:
                 motor_vals = m.run_steer(100, 100, 0)
             if time.time() - time_since_ramp_start > 10:
@@ -1423,10 +1414,10 @@ while program_active:
                 if current_bearing is None:
                     last_significant_bearing_change = time.time()
                     current_bearing = new_bearing
-                
+
                 bearing_diff = abs(new_bearing - current_bearing)
                 if frames % 7 == 0: current_bearing = new_bearing
-                    
+
                 # Check if the absolute difference is within the specified range or if it wraps around 360
                 bearing_min_err = 6
                 if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
@@ -1435,25 +1426,31 @@ while program_active:
                     last_significant_bearing_change = time.time()
                 elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
                     last_significant_bearing_change = time.time()
-                    
+
                 motor_vals = m.run_steer(follower_speed, 100, current_steering)
 
         # ----------
         # DEBUG INFO
         # ----------
 
-        print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)} \tSteer: {int(current_steering)} \t{str(motor_vals)}\tUSS: {round(front_dist, 1)}\tPit: {int(current_pitch)}\tBear: {current_bearing} LSB: {int(time.time() - last_significant_bearing_change)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera} \
+                \tDel: {int(program_sleep_time*1000)}  \
+                \tSteer: {int(current_steering)} \
+                \t{str(motor_vals)} \
+                \tUSS: {round(front_dist, 1)} \
+                \tPit: {int(current_pitch)} \
+                \tBear: {current_bearing} LSB: {int(time.time() - last_significant_bearing_change)}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
             # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
-            preview_image_img0 = cv2.resize(img0, (0,0), fx=0.8, fy=0.7)
+            preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0", preview_image_img0)
 
             # preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
             # cv2.imshow("img0_clean", preview_image_img0_clean)
-            
+
             # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
             # cv2.imshow("img0_binary", preview_image_img0_binary)
 
@@ -1483,35 +1480,33 @@ while program_active:
 
             # if frames % 5 == 0:
             preview_image_img0_contours = img0_clean.copy()
-            cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255,0,0), 3)
-            cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0,255,0), 3)
-            cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0,0,255), 3)
-            
+            cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255, 0, 0), 3)
+            cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0, 255, 0), 3)
+            cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0, 0, 255), 3)
+
             cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
             cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
             cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
             cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
             cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
             cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            
+
             if turning is not None:
                 cv2.putText(preview_image_img0_contours, f"{turning} Turning", (10, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 0, 255), 2) # DEBUG
 
             if isBigTurn:
-                cv2.putText(preview_image_img0_contours, f"Big Turn", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.putText(preview_image_img0_contours, "Big Turn", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
             cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
             cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
             cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
 
-            preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0,0), fx=0.8, fy=0.7)
+            preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0_contours", preview_image_img0_contours)
 
-
             k = cv2.waitKey(1)
-            if (k & 0xFF == ord('q')):
-                # pr.print_stats(SortKey.TIME)
+            if k & 0xFF == ord('q'):
                 program_active = False
                 break
 
@@ -1525,7 +1520,7 @@ while program_active:
                 # cv2.moveWindow("img0_gray_scaled", 0, 0)
                 cv2.moveWindow("img0_contours", 700, 100)
                 has_moved_windows = True
-    except Exception as e:
+    except Exception:
         print("UNHANDLED EXCEPTION: ")
         traceback.print_exc()
         print("Returning to start of loop in 5 seconds...")

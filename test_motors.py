@@ -1,5 +1,5 @@
-import helper_motorkit as m
 import time
+import helper_motorkit as m
 
 # m.throttle(0, 50)
 # m.throttle(1, 50)

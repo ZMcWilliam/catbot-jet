@@ -1,8 +1,8 @@
 import json
 import time
 import cv2
-import helper_camera
 import numpy as np
+import helper_camera
 
 cam = helper_camera.CameraStream()
 cam.start_stream()
@@ -18,20 +18,21 @@ time.sleep(1)
 
 # Load the calibration map from the JSON file if it exists
 calibration_data = {
-    "calibration_value_w": 0, 
+    "calibration_value_w": 0,
     "calibration_map_w": [],
-    "calibration_value_rescue_w": 0, 
+    "calibration_value_rescue_w": 0,
     "calibration_map_rescue_w": [],
 }
+
 try:
-    with open("calibration.json", "r") as json_file:
+    with open("calibration.json", "r", encoding="utf-8") as json_file:
         calibration_data = json.load(json_file)
-except:
+except FileNotFoundError:
     pass # If the file doesn't exist, we'll create it later
 
 while True:
     requested = input("Enter 'w' for white calibration, 'rescue_w' for rescue white calibration, or 'q' to quit: ")
-    
+
     if requested == "q":
         break
 
@@ -49,16 +50,16 @@ while True:
 
         img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         img_gray = cv2.GaussianBlur(img_gray, (5, 5), 0)
-        
+
         print(img_gray[100][100])
-        
+
         calibration_images[requested].append(img_gray)
         print(f"Calibration image {len(calibration_images[requested])} of {NUM_CALIBRATION_IMAGES} captured.")
 
         time.sleep(0.01)
         cv2.imshow("Calibration Image", img_gray)
         k = cv2.waitKey(1)
-        if (k & 0xFF == ord('q')):
+        if k & 0xFF == ord('q'):
             break
 
     # Calculate the average grayscale value across all calibration images
@@ -74,9 +75,9 @@ while True:
     calibration_data["calibration_map_" + requested] = calibration_map.tolist()
 
     # Save the calibration map to the JSON file
-    with open("calibration.json", "w") as json_file:
+    with open("calibration.json", "w", encoding="utf-8") as json_file:
         json.dump(calibration_data, json_file)
 
     print("Calibration images captured, updated calibration.json")
-    
+
 cam.stop()

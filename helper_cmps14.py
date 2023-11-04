@@ -1,6 +1,5 @@
-import smbus2
 import time
-from typing import Union
+import smbus2
 
 class CMPS14:
     """
@@ -10,7 +9,7 @@ class CMPS14:
     def __init__(self, i2c_bus: int = 1, i2c_address: int = 0x61) -> None:
         """
         Initialize the class with the I2C bus number and the I2C address of the CMPS14 module.
-        
+
         Args:
             i2c_bus (int, optional): I2C bus number. Defaults to 1.
             i2c_address (int, optional): I2C address of CMPS14 module. Defaults to 0x61.
@@ -84,12 +83,11 @@ class CMPS14:
             self.last_values["bearing_8bit"] = self.read_byte(0x01)
         except OSError:
             print("[WARN] OSError while reading bearing_8bit. Returning last value.")
-            pass
         return self.last_values["bearing_8bit"]
 
     def read_bearing_16bit(self) -> float:
         """
-        Reads the compass bearing to form a 16-bit unsigned integer in the range 0-3599 
+        Reads the compass bearing to form a 16-bit unsigned integer in the range 0-3599
         to represent the bearing (yaw angle). The result is divided by 10 to scale it to 0-359.9°
 
         Returns:
@@ -100,8 +98,7 @@ class CMPS14:
             self.last_values["bearing_16bit"] = value / 10.0 # Scale to 0-359.9°
         except OSError:
             print("[WARN] OSError while reading bearing_16bit. Returning last value.")
-            pass
-        return self.last_values["bearing_16bit"] 
+        return self.last_values["bearing_16bit"]
 
     def read_pitch(self) -> int:
         """
@@ -114,7 +111,6 @@ class CMPS14:
             self.last_values["pitch"] = self.read_byte(0x04)
         except OSError:
             print("[WARN] OSError while reading pitch. Returning last value.")
-            pass
         return self.last_values["pitch"]
 
     def read_roll(self) -> int:
@@ -128,6 +124,4 @@ class CMPS14:
             self.last_values["roll"] = self.read_byte(0x05)
         except OSError:
             print("[WARN] OSError while reading roll. Returning last value.")
-            pass
         return self.last_values["roll"]
-    

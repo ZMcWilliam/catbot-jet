@@ -25,13 +25,13 @@ async def measure_distance(max_distance: float = 100) -> float:
     trigger.off()
 
     pulse_start = time.monotonic()
-    while echo.is_active == False:
+    while not echo.is_active:
         if time.monotonic() - pulse_start > max_distance / 17150:
             return max_distance
         pulse_start = time.monotonic()
 
     pulse_end = time.monotonic()
-    while echo.is_active == True:
+    while echo.is_active:
         if time.monotonic() - pulse_end > max_distance / 17150:
             return max_distance
         pulse_end = time.monotonic()

@@ -1,5 +1,5 @@
-import adafruit_motor.motor
 import time
+import adafruit_motor.motor
 from adafruit_motorkit import MotorKit
 from typing import Union, List
 
@@ -101,7 +101,7 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         adjusted_speed = normalise_speed(target, speed)
         throttle(target, adjusted_speed)
 
-def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = [-15, 25], ramp=False) -> List[float]:
+def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = None, ramp=False) -> List[float]:
     """
     Run a steering drive at a given speed and offset.
 
@@ -110,10 +110,14 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
         max_speed (int): The maximum speed to run the motors at (0-100).
         offset (float, optional): The offset to apply to the motors for steering (default 0)
         skip_range (List[int], optional): The range of speeds to skip when calculating an offset (default [-30, 30]) - Use False to disable
+        ramp (bool, optional): Whether to increase up the speed when the base speed is low (default False)
 
     Returns:
         List[float]: The final left and right speeds of the motors.
     """
+    if skip_range is None: 
+        skip_range = [-15, 25]
+
     left_speed = base_speed + offset
     right_speed = base_speed - offset
 

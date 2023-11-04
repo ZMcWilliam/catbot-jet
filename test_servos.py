@@ -29,7 +29,7 @@ while True:
         if step.startswith("+"):
             try:
                 step = int(step[1:])
-            except:
+            except ValueError:
                 step = 1
             current_angle += step
             if current_angle > 90:
@@ -39,7 +39,7 @@ while True:
         else:
             try:
                 current_angle = int(step)
-            except:
+            except ValueError:
                 current_angle += current_dir
 
                 if current_angle > 90:

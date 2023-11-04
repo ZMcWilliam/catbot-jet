@@ -1,7 +1,7 @@
 import time
 from helper_cmps14 import CMPS14
 
-cmps14 = CMPS14(1, 0x61)
+cmps14 = CMPS14(0, 0x60)
 
 while True:
     bearing_8bit = cmps14.read_bearing_8bit()
@@ -10,7 +10,7 @@ while True:
     roll = cmps14.read_roll()
 
     print(f"{bearing_16bit}°"
-            + f"\tPitch: {pitch}°"
-            + f"\tRoll: {roll}°")
+          + f"\tPitch: {pitch}°"
+          + f"\tRoll: {roll}°")
 
     time.sleep(0.02)
