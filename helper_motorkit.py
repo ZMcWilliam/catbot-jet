@@ -5,13 +5,6 @@ from typing import Union, List
 
 kit = MotorKit()
 
-# Direction config, such that a positive speed value will be "straight" for each motor
-conf_directions = [1, -1, -1, 1]
-
-# These should correlate to what we want as speed "30" for each motor
-# such that run of ("front_l", 30) will run the front right motor at 40
-conf_offsets = [40, 25, 26, 28];
-
 # Physical port numbers for each motor
 conf_tank = {
     "front_l": 1,
@@ -20,7 +13,41 @@ conf_tank = {
     "back_r": 3
 }
 
- 
+conf_directions = [1, -1, -1, -1] # Motor directions so that a positive speed will move the robot forward
+conf_rotation = [50, 50, 56, 47] # The speed for each motor where 1 second correlates to 1 rotation
+conf_wheel_size = [60, 60, 50, 50] # Wheel sizes in mm
+
+def normalise_speed(target: int, input_speed: float) -> float:
+    """
+    Normalise the speed of a motor taking into account its wheel size and rotations per
+    second at a baseline speed. This ensures that a given input speed results in the
+    same output velocity regardless of the motor's rotation rate or wheel size.
+
+    There will still be some variation in the output speed, but this is significantly
+    better than not normalizing the speed at all.
+
+    Args:
+        target (int): The motor number (0-3).
+        input_speed (float): The desired input speed (-100 to 100).
+
+    Returns:
+        float: The normalised speed for the given motor.
+    """
+    # Calculate the base motor speed factor (for motor with conf_wheel_size of 60)
+    base_motor_speed = 50  # This is the speed input that gives 1 rotation per second for the base motor
+    base_wheel_size = 60   # This is the wheel size for the base configuration
+
+    # Calculate the current motor's speed factor
+    current_motor_factor = conf_rotation[target] / base_motor_speed
+
+    # Adjust for wheel size difference
+    current_wheel_factor = conf_wheel_size[target] / base_wheel_size
+
+    # Adjusted speed based on motor factor and wheel factor
+    normalised_speed = (input_speed * current_motor_factor) / current_wheel_factor
+
+    return normalised_speed
+
 def motor(num: int) -> adafruit_motor.motor.DCMotor:
     """
     Returns the motor object for a given number.
@@ -42,6 +69,19 @@ def motor(num: int) -> adafruit_motor.motor.DCMotor:
     else:
         raise ValueError("Motor number must be between 0 and 3")
 
+def throttle(target: int, speed: float) -> None:
+    """
+    Set the throttle for a given motor. Skips speed normalisation.
+
+    Args:
+        target (int): The motor number (0-3).
+        speed (float): The speed to set the motor to (-100 to 100).
+    """
+    if speed > 100: speed = 100
+    elif speed < -100: speed = -100
+
+    motor(target).throttle = speed / 100 * conf_directions[target]
+
 def run(targets: Union[int, List[int]], speed: float) -> None:
     """
     Run one motor or multiple motors at a given speed.
@@ -54,22 +94,12 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
     if isinstance(targets, int):
         targets = [targets]
 
-    if speed > 100:
-        speed = 100
-    elif speed < -100:
-        speed = -100
+    if speed > 100: speed = 100
+    elif speed < -100: speed = -100
 
     for target in targets:
-        offset_speed = 0
-        if speed > 10: 
-            offset_speed = (speed - 30) + conf_offsets[target]
-        elif speed < -10:
-            offset_speed = (speed + 30) - conf_offsets[target]
-            
-        if offset_speed > 100: offset_speed = 100
-        elif offset_speed < -100: offset_speed = -100
-
-        motor(target).throttle = offset_speed / 100 * conf_directions[target]
+        adjusted_speed = normalise_speed(target, speed)
+        throttle(target, adjusted_speed)
 
 def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = [-15, 25], ramp=False) -> List[float]:
     """
@@ -96,10 +126,10 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
             right_speed = skip_range[0]
         elif skip_range[1] > right_speed >= 0:
             right_speed = skip_range[1]
-            
+
     left_speed = round(max(min(left_speed, max_speed), -max_speed), 2)
     right_speed = round(max(min(right_speed, max_speed), -max_speed), 2)
-    
+
     if ramp and left_speed < 30:
         left_speed = 40
     if ramp and right_speed < 30:
