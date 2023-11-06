@@ -12,7 +12,7 @@ calibration_images = {
     "rescue_w": [],
 }
 
-NUM_CALIBRATION_IMAGES = 50
+NUM_CALIBRATION_IMAGES = 100
 
 time.sleep(1)
 
@@ -45,6 +45,7 @@ while True:
         img0 = cam.read_stream()
         img0_resized = cam.resize_image(img0)
         img0_gray = cv2.cvtColor(img0_resized, cv2.COLOR_BGR2GRAY)
+        img0_gray = cv2.GaussianBlur(img0_gray, (5, 5), 0)
 
         calibration_images[requested].append(img0_gray)
         print(f"Calibration image {len(calibration_images[requested])} of {NUM_CALIBRATION_IMAGES} captured.")

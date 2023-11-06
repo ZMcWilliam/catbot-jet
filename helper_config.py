@@ -50,7 +50,7 @@ config_values = {
     "calibration_map_rescue": calibration_map_rescue,
 }
 
-def get_conf(key=None):
+def get(key=None):
     """
     Returns the config value for the given key, or all config values if no key is given.
 

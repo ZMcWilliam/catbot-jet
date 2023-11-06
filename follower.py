@@ -11,40 +11,39 @@
 import time
 import os
 import sys
-import json
 import traceback
 import math
 import signal
 import board
 import cv2
 import busio
-import gpiozero
 import numpy as np
 import adafruit_vl6180x
 import helper_camera
 import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
+import helper_config as config
 from helper_cmps14 import CMPS14
 
-DEBUGGER = False # Should the debug switch actually work? This should be set to false if using the runner
+DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
 
 # ------------
 # DEVICE PORTS
 # ------------
-PORT_DEBUG_SWITCH = 21
-PORT_SERVO_GATE = 12
-PORT_SERVO_CLAW = 13
-PORT_SERVO_LIFT = 18
-PORT_SERVO_CAM = 19
-PORT_USS_TRIG = {
-    "front": 23,
-    "side": 27,
-}
-PORT_USS_ECHO = {
-    "front": 24,
-    "side": 22,
-}
+# PORT_DEBUG_SWITCH = 21
+# PORT_SERVO_GATE = 12
+# PORT_SERVO_CLAW = 13
+# PORT_SERVO_LIFT = 18
+# PORT_SERVO_CAM = 19
+# PORT_USS_TRIG = {
+#     "front": 23,
+#     "side": 27,
+# }
+# PORT_USS_ECHO = {
+#     "front": 24,
+#     "side": 22,
+# }
 
 # -------------
 # CONFIGURATION
@@ -55,37 +54,14 @@ error_weight = 0.5                  # Weight of the error value when calculating
 angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
 
-KP = 1.3                            # Proportional gain
+KP = 1.5                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.08                           # Derivative gain
 
-follower_speed = 45                 # Base speed of the line follower
-obstacle_treshold = 9               # Minimum distance treshold for obstacles (cm)
+follower_speed = 40                 # Base speed of the line follower
+obstacle_threshold = 50             # Minimum distance threshold for obstacles (mm)
 
 evac_cam_angle = 7                  # Angle of the camera when evacuating
-
-# ---------------------
-# LOAD STORED JSON DATA
-# ---------------------
-with open("calibration.json", "r", encoding="utf-8") as json_file:
-    calibration_data = json.load(json_file)
-calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
-calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
-
-with open("config.json", "r", encoding="utf-8") as json_file:
-    config_data = json.load(json_file)
-
-config_values = {
-    "black_line_threshold": config_data["black_line_threshold"],
-    "black_rescue_threshold": config_data["black_rescue_threshold"],
-    "rescue_circle_conf": config_data["rescue_circle_conf"],
-    "green_turn_hsv_threshold": [np.array(bound) for bound in config_data["green_turn_hsv_threshold"]],
-    "red_hsv_threshold": [np.array(bound) for bound in config_data["red_hsv_threshold"]],
-    "obstacle_hsv_threshold": [np.array(bound) for bound in config_data["obstacle_hsv_threshold"]],
-    "rescue_block_hsv_threshold": [np.array(bound) for bound in config_data["rescue_block_hsv_threshold"]],
-    "rescue_circle_minradius_offset": config_data["rescue_circle_minradius_offset"],
-    "rescue_binary_gray_scale_multiplier": config_data["rescue_binary_gray_scale_multiplier"]
-}
 
 # ----------------
 # SYSTEM VARIABLES
@@ -128,9 +104,6 @@ time_ramp_end = 0
 no_black_contours_mode = "straight"
 no_black_contours = False
 
-current_bearing = None
-last_significant_bearing_change = 0
-
 # Choose a random side for the obstacle in case the first direction is not possible
 # A proper check should be added, but this is a quick fix for now
 obstacle_dir = np.random.choice([-1, 1])
@@ -142,27 +115,22 @@ i2c = busio.I2C(board.SCL, board.SDA)
 
 cam = helper_camera.CameraStream(
     camera_num=0,
-    processing_conf={
-        "calibration_map": calibration_map,
-        "black_line_threshold": config_values["black_line_threshold"],
-        "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
-        "red_hsv_threshold": config_values["red_hsv_threshold"],
-    }
+    processing_conf=config.processing_conf
 )
 
-servo = {
-    "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
-    "claw": gpiozero.AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
-    "lift": gpiozero.AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
-    "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-64)       # -90=Down, 90=Up
-}
+# servo = {
+#     "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
+#     "claw": gpiozero.AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
+#     "lift": gpiozero.AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
+#     "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-64)       # -90=Down, 90=Up
+# }
 
-debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
+# debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
 
-USS = {
-    key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
-    for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
-}
+# USS = {
+#     key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
+#     for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
+# }
 
 cmps = CMPS14(7, 0x61)
 
@@ -189,11 +157,11 @@ def exit_gracefully(signum=None, frame=None) -> None:
     cam.stop()
     cv2.destroyAllWindows()
 
-    for u in USS.values():
-        u.close()
+    # for u in USS.values():
+    #     u.close()
 
-    for s in servo.values():
-        s.detach()
+    # for s in servo.values():
+    #     s.detach()
     sys.exit()
 
 signal.signal(signal.SIGINT, exit_gracefully)
@@ -211,7 +179,7 @@ def debug_state(mode=None) -> bool:
     if mode == "rescue":
         return True
 
-    return DEBUGGER and debug_switch.value
+    return DEBUGGER # and debug_switch.value
 
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
     """
@@ -310,7 +278,7 @@ while program_active:
         # ---------------
         # FRAME BALANCING
         # ---------------
-        time.sleep(program_sleep_time)
+        # time.sleep(program_sleep_time)
         frames += 1
 
         if frames % 30 == 0 and frames != 0:
@@ -318,13 +286,13 @@ while program_active:
             fpsCamera = cam.get_fps()
 
             # Try to balance out the processing time and the camera FPS
-            sleep_adjustment_amt = 0.001
-            sleep_time_max = 0.02
-            sleep_time_min = 0.005
-            if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_max:
-                program_sleep_time += sleep_adjustment_amt
-            elif fpsLoop < fpsCamera and program_sleep_time > sleep_time_min:
-                program_sleep_time -= sleep_adjustment_amt
+            # sleep_adjustment_amt = 0.001
+            # sleep_time_max = 0.02
+            # sleep_time_min = 0.005
+            # if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_max:
+            #     program_sleep_time += sleep_adjustment_amt
+            # elif fpsLoop < fpsCamera and program_sleep_time > sleep_time_min:
+            #     program_sleep_time -= sleep_adjustment_amt
 
             if frames > 500:
                 fpsTime = time.time()
@@ -334,12 +302,13 @@ while program_active:
         # ------------------
         # OBSTACLE AVOIDANCE
         # ------------------
-        front_dist = USS["front"].distance * 100
-        if front_dist < obstacle_treshold:
+        front_dist = vl6180x.range
+        if 0 < front_dist < obstacle_threshold:
             print(f"Obstacle detected at {front_dist}cm... ", end="")
             m.stop_all()
             time.sleep(0.7)
-            if USS["front"].distance * 100 < obstacle_treshold + 1:
+            front_dist = vl6180x.range
+            if 0 < front_dist < obstacle_threshold + 5:
                 print("Confirmed.")
                 avoid_obstacle()
             else:
@@ -367,7 +336,7 @@ while program_active:
 
         # -----------
 
-        raw_white_contours, white_hierarchy = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         # Filter white contours based on area
         white_contours = []
@@ -382,7 +351,7 @@ while program_active:
         # Find black contours
         # If there are no black contours, skip the rest of the loop
         img0_line_not = cv2.bitwise_not(img0_line)
-        black_contours, black_hierarchy = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         if len(black_contours) == 0:
             print("No black contours found")
             continue
@@ -402,7 +371,7 @@ while program_active:
         if is_there_green > 4000: # and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
             changed_img0_line = None
 
-            unfiltered_green_contours, green_hierarchy = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            unfiltered_green_contours, _ = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
             green_contours_filtered = [contour for contour in unfiltered_green_contours if cv2.contourArea(contour) > 1000]
             white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
@@ -484,11 +453,10 @@ while program_active:
             if changed_img0_line is not None:
                 print("Green caused a change in the line")
                 img0_line_new = changed_img0_line
-                new_black_contours, new_black_hierarchy = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                new_black_contours, _ = cv2.findContours(img0_line_new, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 cv2.drawContours(img0, new_black_contours, -1, (0, 0, 255), 2)
                 if len(new_black_contours) > 0:
                     black_contours = new_black_contours
-                    black_hierarchy = new_black_hierarchy
                 else:
                     print("No black contours found after changing contour")
 
@@ -502,7 +470,7 @@ while program_active:
         # -----------------
         # STOP ON RED CHECK
         # -----------------
-        img0_red = cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1])
+        img0_red = cv2.inRange(img0_hsv, config.get("red_hsv_threshold")[0], config.get("red_hsv_threshold")[1])
         img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
         red_contours = [[contour, cv2.contourArea(contour)] for contour in cv2.findContours(img0_red, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)[0]]
@@ -694,7 +662,7 @@ while program_active:
 
                 # Get the edges that the contour not relevant to the closest points touches
                 edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
-                
+
                 # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
                 cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])
 
@@ -784,10 +752,9 @@ while program_active:
         if changed_black_contour is not False:
             print("Changed black contour, LF State: ", current_linefollowing_state)
             cv2.drawContours(img0, black_contours, -1, (0, 0, 255), 2)
-            new_black_contours, new_black_hierarchy = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            new_black_contours, _ = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
             if len(new_black_contours) > 0:
                 black_contours = new_black_contours
-                black_hierarchy = new_black_hierarchy
             else:
                 print("No black contours found after changing contour")
 
@@ -893,59 +860,58 @@ while program_active:
         pid_last_error = error
         current_time = time.time()
 
-        current_pitch = cmps.read_pitch()
+        # current_pitch = cmps.read_pitch()
 
-        if current_pitch > 180 and current_pitch < 240:
-            if time_since_ramp_start == 0:
-                time_since_ramp_start = time.time()
-            print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
-            if time.time() - time_since_ramp_start > 18:
-                motor_vals = m.run_steer(100, 100, 0)
-            if time.time() - time_since_ramp_start > 10:
-                motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
-            else:
-                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
-        else:
-            if time_since_ramp_start > 3:
-                time_ramp_end = time.time() + 2
+        # if current_pitch > 180 and current_pitch < 240:
+        #     if time_since_ramp_start == 0:
+        #         time_since_ramp_start = time.time()
+        #     print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
+        #     if time.time() - time_since_ramp_start > 18:
+        #         motor_vals = m.run_steer(100, 100, 0)
+        #     if time.time() - time_since_ramp_start > 10:
+        #         motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
+        #     else:
+        #         motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+        # else:
+        #     if time_since_ramp_start > 3:
+        #         time_ramp_end = time.time() + 2
 
-            time_since_ramp_start = 0
-            if time.time() < time_ramp_end:
-                print("END RAMP")
-                last_significant_bearing_change = time.time()
-                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
-            else:
-                new_bearing = cmps.read_bearing_16bit()
+        #     time_since_ramp_start = 0
+        #     if time.time() < time_ramp_end:
+        #         print("END RAMP")
+        #         last_significant_bearing_change = time.time()
+        #         motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+        #     else:
+        #         new_bearing = cmps.read_bearing_16bit()
+        #         new_bearing = 0
 
-                if current_bearing is None:
-                    last_significant_bearing_change = time.time()
-                    current_bearing = new_bearing
+        #         if current_bearing is None:
+        #             last_significant_bearing_change = time.time()
+        #             current_bearing = new_bearing
 
-                bearing_diff = abs(new_bearing - current_bearing)
-                if frames % 7 == 0: current_bearing = new_bearing
+        #         bearing_diff = abs(new_bearing - current_bearing)
+        #         if frames % 7 == 0: current_bearing = new_bearing
 
-                # Check if the absolute difference is within the specified range or if it wraps around 360
-                bearing_min_err = 6
-                if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
-                    print("SAME BEARING FOR 10 SECONDS")
-                    m.run_tank_for_time(100, 100, 400)
-                    last_significant_bearing_change = time.time()
-                elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
-                    last_significant_bearing_change = time.time()
+        #         # Check if the absolute difference is within the specified range or if it wraps around 360
+        #         bearing_min_err = 6
+        #         if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
+        #             print("SAME BEARING FOR 10 SECONDS")
+        #             m.run_tank_for_time(100, 100, 400)
+        #             last_significant_bearing_change = time.time()
+        #         elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
+        #             last_significant_bearing_change = time.time()
 
-                motor_vals = m.run_steer(follower_speed, 100, current_steering)
+        motor_vals = m.run_steer(follower_speed, 100, current_steering)
 
         # ----------
         # DEBUG INFO
         # ----------
 
-        print(f"FPS: {fpsLoop}, {fpsCamera} \
-                \tDel: {int(program_sleep_time*1000)}  \
-                \tSteer: {int(current_steering)} \
-                \t{str(motor_vals)} \
-                \tUSS: {round(front_dist, 1)} \
-                \tPit: {int(current_pitch)} \
-                \tBear: {current_bearing} LSB: {int(time.time() - last_significant_bearing_change)}")
+        print(f"FPS: {fpsLoop}, {fpsCamera}"
+            + f"\tDel: {int(program_sleep_time*1000)}"
+            + f"\tSteer: {int(current_steering)}"
+            + f"\t{str(motor_vals)}"
+            + f"\tUSS: {round(front_dist, 1)}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)

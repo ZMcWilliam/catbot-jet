@@ -7,7 +7,7 @@ import cv2
 from threading import Thread
 
 def gstreamer_pipeline(sensor_id=0, capture_width=1280, capture_height=720,
-                       display_width=640, display_height=480, framerate=60, flip_method=0):
+                       display_width=640, display_height=480, framerate=60, flip_method=2):
     return (
         f"nvarguscamerasrc sensor-id={sensor_id} ! "
         f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, framerate=(fraction){framerate}/1 ! "
@@ -108,10 +108,13 @@ class CameraStream:
             raise Exception(f"[CAMERA] C{self.num} has no conf for processing")
 
         resized = self.resize_image(image)
-        resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        # resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
-        # Find the black in the image
-        gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
+        # Convert image to grayscale/HSV
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
+
+        # Blur the grayscale image slightly
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
 
         # Scale white values based on the inverse of the calibration map
@@ -123,7 +126,6 @@ class CameraStream:
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
         # Find green in the image
-        hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
         green_turn_hsv_threshold = self.processing_conf["green_turn_hsv_threshold"]
         green = cv2.bitwise_not(cv2.inRange(hsv, green_turn_hsv_threshold[0], green_turn_hsv_threshold[1]))
         green = cv2.erode(green, np.ones((5, 5), np.uint8), iterations=1)

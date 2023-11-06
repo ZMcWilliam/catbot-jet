@@ -7,10 +7,10 @@ kit = MotorKit()
 
 # Physical port numbers for each motor
 conf_tank = {
-    "front_l": 1,
-    "front_r": 0,
-    "back_l": 2,
-    "back_r": 3
+    "front_l": 0,
+    "front_r": 3,
+    "back_l": 1,
+    "back_r": 2
 }
 
 conf_directions = [1, -1, -1, -1] # Motor directions so that a positive speed will move the robot forward
