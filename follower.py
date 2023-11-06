@@ -164,7 +164,7 @@ USS = {
     for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
 }
 
-cmps = CMPS14(1, 0x61)
+cmps = CMPS14(7, 0x61)
 
 vl6180x = adafruit_vl6180x.VL6180X(i2c)
 vl6180x_gain = adafruit_vl6180x.ALS_GAIN_1 # See test_tof.py for more values

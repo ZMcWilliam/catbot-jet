@@ -81,8 +81,9 @@ class CMPS14:
         """
         try:
             self.last_values["bearing_8bit"] = self.read_byte(0x01)
-        except OSError:
+        except OSError as e:
             print("[WARN] OSError while reading bearing_8bit. Returning last value.")
+            print(e)
         return self.last_values["bearing_8bit"]
 
     def read_bearing_16bit(self) -> float:
@@ -96,8 +97,9 @@ class CMPS14:
         try:
             value = self.read_word(0x02)
             self.last_values["bearing_16bit"] = value / 10.0 # Scale to 0-359.9°
-        except OSError:
+        except OSError as e:
             print("[WARN] OSError while reading bearing_16bit. Returning last value.")
+            print(e)
         return self.last_values["bearing_16bit"]
 
     def read_pitch(self) -> int:
@@ -109,8 +111,9 @@ class CMPS14:
         """
         try:
             self.last_values["pitch"] = self.read_byte(0x04)
-        except OSError:
+        except OSError as e:
             print("[WARN] OSError while reading pitch. Returning last value.")
+            print(e)
         return self.last_values["pitch"]
 
     def read_roll(self) -> int:
@@ -122,6 +125,7 @@ class CMPS14:
         """
         try:
             self.last_values["roll"] = self.read_byte(0x05)
-        except OSError:
+        except OSError as e:
             print("[WARN] OSError while reading roll. Returning last value.")
+            print(e)
         return self.last_values["roll"]
