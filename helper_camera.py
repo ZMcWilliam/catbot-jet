@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 import signal
@@ -42,6 +43,8 @@ class CameraStream:
         self.frames = 0
         self.start_time = 0
 
+        self.capture_fails = 0
+
         self.stream_running = True
         self.capture_thread = Thread(target=self.update_stream, args=())
         self.capture_thread.start()
@@ -51,6 +54,13 @@ class CameraStream:
         signal.signal(signal.SIGTERM, self.signal_handler)
 
         print(f"[CAMERA] C{self.num} Initialized")
+
+    def restart_nvargus_daemon(self):
+        print(f"[CAMERA] C{self.num} Attempting to restart nvargus-daemon...")
+        os.system('sudo service nvargus-daemon restart')
+        time.sleep(2) # Wait a bit for the service to restart
+        print(f"[CAMERA] C{self.num} nvargus-daemon restarted. Trying to initialize camera again.")
+        self.cam = get_camera(self.num) # Attempt to re-initialize the camera
 
     def take_image(self):
         ret, new_img = self.cam.read()
@@ -82,7 +92,11 @@ class CameraStream:
             self.frames += 1
             ret, self.img = self.cam.read()
             if not ret:
-                print(f"[CAMERA] C{self.num} WARNING: Failed to capture an image, retrying...")
+                self.capture_fails += 1
+                print(f"[CAMERA] C{self.num} WARNING: Failed to capture an image, retrying... ({self.capture_fails}/5)")
+                if self.capture_fails >= 5:
+                    self.restart_nvargus_daemon()
+                    self.capture_fails = 0
                 time.sleep(0.1)
                 continue
 
