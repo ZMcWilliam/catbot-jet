@@ -533,15 +533,15 @@ while program_active:
                     top_dists = [p[1] for p in combined_top_points]
 
                     # If all points are near the top, then we should check if we are at an intersection
-                    if sum([d < 60 for d in top_dists]) == 4:
+                    if sum(d < 60 for d in top_dists) == 4:
                         # If none of the following are true, then make the top of the image white, anywhere above the lowest point
                         #   - All points at the top
                         #   - Left top points are at the top, right top points are close to the top (disabled for now, as it breaks entry to 3WC)
                         #   - Right top points are at the top, left top points are close to the top (disabled for now, as it breaks entry to 3WC)
                         if (
-                            not sum([d < 3 for d in top_dists]) == 4
-                            # and not (sum([d < 3 for d in top_dists[:2]]) == 2 and sum([12 < d and d < 80 for d in top_dists[2:]]) == 2)
-                            # and not (sum([d < 3 for d in top_dists[2:]]) == 2 and sum([12 < d and d < 80 for d in top_dists[:2]]) == 2)
+                            not sum(d < 3 for d in top_dists) == 4
+                            # and not (sum(d < 3 for d in top_dists[:2]) == 2 and sum(12 < d and d < 80 for d in top_dists[2:]) == 2)
+                            # and not (sum(d < 3 for d in top_dists[2:]) == 2 and sum(12 < d and d < 80 for d in top_dists[:2]) == 2)
                         ):
                             current_linefollowing_state = "2-top-ng"
                             lowest_point = sorted(combined_top_points, key=lambda point: point[1])[-1]
@@ -560,11 +560,11 @@ while program_active:
                     bottom_dists = [img0.shape[0] - p[1] for p in combined_bottom_points]
 
                     # If all points are at the bottom, we probably exited the intersection
-                    if sum([d < 3 for d in bottom_dists]) == 4:
+                    if sum(d < 3 for d in bottom_dists) == 4:
                         current_linefollowing_state = None
                         print("Exited intersection")
                     # If all points are still near the bottom, since we already know we are existing an intersection, remove the bottom to prevent the robot from turning
-                    elif sum([d < 120 for d in bottom_dists]) == 4:
+                    elif sum(d < 120 for d in bottom_dists) == 4:
                         current_linefollowing_state = "2-btm-ng"
                         highest_point = sorted(combined_bottom_points, key=lambda point: point[1])[0]
 
@@ -595,8 +595,8 @@ while program_active:
 
                 # Middle of contour centres
                 mid_point = (
-                    int(sum([contour[1][0] for contour in sorted_contours_horz]) / len(sorted_contours_horz)),
-                    int(sum([contour[1][1] for contour in sorted_contours_horz]) / len(sorted_contours_horz))
+                    int(sum(contour[1][0] for contour in sorted_contours_horz) / len(sorted_contours_horz)),
+                    int(sum(contour[1][1] for contour in sorted_contours_horz) / len(sorted_contours_horz))
                 )
 
                 # Get the closest point of the approx contours to the mid point
@@ -847,7 +847,7 @@ while program_active:
 
         isBigTurn = lineHitsEdge and abs(black_contour_angle_new) > bigTurnAngleMargin
 
-        if isBigTurn and ((lineHitsEdge == 1 and black_contour_angle_new > 0) or 
+        if isBigTurn and ((lineHitsEdge == 1 and black_contour_angle_new > 0) or
                           (lineHitsEdge == 2 and black_contour_angle_new < 0)):
             black_contour_angle_new = black_contour_angle_new * -1
 
@@ -1014,7 +1014,7 @@ while program_active:
 
             cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
 
-            preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
+            # preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0_contours", preview_image_img0_contours)
 
             k = cv2.waitKey(1)
