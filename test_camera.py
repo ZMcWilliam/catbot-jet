@@ -14,9 +14,9 @@ img0 = cam.read_stream()
 max_width = img0.shape[1]
 max_height = img0.shape[0]
 
-cam_crop_w = 355
+cam_crop_w = 290
 cam_crop_h = 264
-cam_crop_offset_x = int(max_width / 2) + 4
+cam_crop_offset_x = int(max_width / 2) -2
 cam_crop_offset_y = 104
 
 cv2.namedWindow("Config")

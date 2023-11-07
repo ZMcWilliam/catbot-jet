@@ -48,7 +48,7 @@ DEBUGGER = True # Should the debug switch actually work? This should be set to f
 # -------------
 # CONFIGURATION
 # -------------
-max_error = 285                     # Maximum error value when calculating a percentage
+max_error = 145                     # Maximum error value when calculating a percentage
 max_angle = 90                      # Maximum angle value when calculating a percentage
 error_weight = 0.5                  # Weight of the error value when calculating the PID input
 angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
@@ -76,7 +76,6 @@ last_line_pos = np.array([100, 100])
 turning = None
 last_green_time = 0
 initial_green_time = 0
-changed_black_contour = False
 current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
 red_stop_check = 0
@@ -359,16 +358,15 @@ while program_active:
         # -----------
         # GREEN TURNS
         # -----------
-
-        is_there_green = np.count_nonzero(img0_green == 0)
+        total_green_area = np.count_nonzero(img0_green == 0)
         black_contours_turn = None
 
-        # print("Green: ", is_there_green)
+        # print("Green: ", total_green_area)
 
         img0_line_new = img0_line.copy()
 
         # Check if there is a significant amount of green pixels
-        if is_there_green > 4000: # and len(white_contours) > 2: #((is_there_green > 1000 or time.time() - last_green_found_time < 0.5) and (len(white_contours) > 2 or greenCenter is not None)):
+        if total_green_area > (4000 if not turning else 1000):
             changed_img0_line = None
 
             unfiltered_green_contours, _ = cv2.findContours(cv2.bitwise_not(img0_green), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -407,48 +405,48 @@ while program_active:
                 start_bearing = cmps.read_bearing_16bit()
                 align_to_bearing(start_bearing - 180, 10, debug_prefix="Double Green Rotate - ")
                 m.run_tank_for_time(40, 40, 200)
-                turning = "RIGHT" # Arbitrarily make it right for now... It is very possible this won't work
+                turning = "RIGHT"
                 continue
-            else:
-                if len(followable_green) >= 2 and turning:
-                    followable_green.sort(key=lambda x: x["w_bounds"][0])
-                    if turning == "LEFT":
-                        # If we are turning left, we want the leftmost green contour
-                        followable_green = followable_green[:1]
-                    elif turning == "RIGHT":
-                        # If we are turning right, we want the rightmost green contour
-                        followable_green = followable_green[-1:]
 
-                if len(followable_green) == 1:
-                    can_follow_green = True
+            if len(followable_green) >= 2 and turning:
+                followable_green.sort(key=lambda x: x["w_bounds"][0])
+                if turning == "LEFT":
+                    # If we are turning left, we want the leftmost green contour
+                    followable_green = followable_green[:1]
+                elif turning == "RIGHT":
+                    # If we are turning right, we want the rightmost green contour
+                    followable_green = followable_green[-1:]
+
+            if len(followable_green) == 1:
+                can_follow_green = True
+                if not turning:
+                    # With double green, we may briefly see only 1 green contour while entering.
+                    # Hence, add some delay to when we start turning to prevent this and ensure we can see all green contours
+                    if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
+                    if time.time() - initial_green_time < 0.3: can_follow_green = False
+
+                if can_follow_green:
+                    selected = followable_green[0]
+                    # Dilate selected["w"] to make it larger, and then use it as a mask
+                    img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
+                    cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
+
+                    # Mask the line image with the dilated white contour
+                    img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
+                    # Erode the line image to remove slight inconsistencies we don't want
+                    img0_line_new = cv2.erode(img0_line_new, np.ones((3, 3), np.uint8), iterations=2)
+
+                    changed_img0_line = img0_line_new
+
+                    last_green_time = time.time()
                     if not turning:
-                        # With double green, we may briefly see only 1 green contour while entering.
-                        # Hence, add some delay to when we start turning to prevent this and ensure we can see all green contours
-                        if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
-                        if time.time() - initial_green_time < 0.3: can_follow_green = False
-
-                    if can_follow_green:
-                        selected = followable_green[0]
-                        # Dilate selected["w"] to make it larger, and then use it as a mask
-                        img_black = np.zeros((img0.shape[0], img0.shape[1]), np.uint8)
-                        cv2.drawContours(img_black, [selected["w"]], -1, 255, 100)
-
-                        # Mask the line image with the dilated white contour
-                        img0_line_new = cv2.bitwise_and(cv2.bitwise_not(img0_line), img_black)
-                        # Erode the line image to remove slight inconsistencies we don't want
-                        img0_line_new = cv2.erode(img0_line_new, np.ones((3, 3), np.uint8), iterations=2)
-
-                        changed_img0_line = img0_line_new
-
-                        last_green_time = time.time()
-                        if not turning:
-                            # Based on the centre location of the white contour, we are either turning left or right
-                            if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
-                                print("Start Turn: left")
-                                turning = "LEFT"
-                            else:
-                                print("Start Turn: right")
-                                turning = "RIGHT"
+                        # Based on the centre location of the white contour, we are either turning left or right
+                        if selected["w_bounds"][0] + selected["w_bounds"][2] / 2 < img0.shape[1] / 2:
+                            print("Start Turn: left")
+                            turning = "LEFT"
+                        else:
+                            print("Start Turn: right")
+                            turning = "RIGHT"
 
             if changed_img0_line is not None:
                 print("Green caused a change in the line")
@@ -459,8 +457,6 @@ while program_active:
                     black_contours = new_black_contours
                 else:
                     print("No black contours found after changing contour")
-
-                changed_black_contour = False
 
             print("GREEN TURN STUFF")
         elif turning is not None and last_green_time + 1 < time.time():
@@ -537,7 +533,7 @@ while program_active:
                     top_dists = [p[1] for p in combined_top_points]
 
                     # If all points are near the top, then we should check if we are at an intersection
-                    if sum([d < 80 for d in top_dists]) == 4:
+                    if sum([d < 60 for d in top_dists]) == 4:
                         # If none of the following are true, then make the top of the image white, anywhere above the lowest point
                         #   - All points at the top
                         #   - Left top points are at the top, right top points are close to the top (disabled for now, as it breaks entry to 3WC)
@@ -569,7 +565,7 @@ while program_active:
                         print("Exited intersection")
                     # If all points are still near the bottom, since we already know we are existing an intersection, remove the bottom to prevent the robot from turning
                     elif sum([d < 120 for d in bottom_dists]) == 4:
-                        current_linefollowing_state = "2-bottom-ng"
+                        current_linefollowing_state = "2-btm-ng"
                         highest_point = sorted(combined_bottom_points, key=lambda point: point[1])[0]
 
                         img0_line_new[highest_point[1] - 3:, :] = 255
@@ -669,7 +665,24 @@ while program_active:
                 # If we are just entering a 3-way intersection, and the 'big contour' does not connect to the bottom,
                 # we may be entering a 4-way intersection... so follow the vertical line
                 if len(edges_big) >= 2 and "bottom" not in edges_big and "-en" in current_linefollowing_state:
-                    cut_direction = not cut_direction
+                    edges_a = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[0][1]], img0_binary.shape))
+                    edges_b = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[1][1]], img0_binary.shape))
+
+                    tight_bend = False
+                    if edges_a == ["bottom", "left", "top"] or edges_b == ["bottom", "left", "top"]:
+                        tight_bend = True
+                        cut_direction = 0
+                    if edges_a == ["bottom", "right", "top"] or edges_b == ["bottom", "right", "top"]:
+                        tight_bend = True
+                        cut_direction = 1
+
+                    if tight_bend:
+                        # Change the cut line to be a vertical line from the mid point
+                        # Avoids false positive issues a tight U bend leading to incorrect cutting
+                        split_line = [(mid_point[0], 0), (mid_point[0], img0.shape[0])]
+                    else:
+                        cut_direction = not cut_direction
+
                 # We are exiting a 4-way intersection, so follow the vertical line
                 elif current_linefollowing_state == "3-ng-4-ex":
                     cut_direction = not cut_direction
@@ -688,10 +701,11 @@ while program_active:
                         cut_direction = not cut_direction
 
                 # CutMaskWithLine will fail if the line is flat, so we need to make sure that the line is not flat
-                if closest_2_points_vert_sort[0][0][1] == closest_2_points_vert_sort[1][0][1]:
-                    closest_2_points_vert_sort[0][0][1] += 1 # Move the first point up by 1 pixel
+                if split_line[0][1] == split_line[1][1]:
+                    split_line[0][1] += 1 # Move the first point up by 1 pixel
 
                 img0_line_new = helper_intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
+                img0_line_new = helper_intersections.CutMaskWithLine(split_line[0], split_line[1], img0_line_new, "left" if cut_direction else "right")
                 changed_black_contour = cv2.bitwise_not(img0_line_new)
 
             elif len(white_contours_filtered) == 4:
@@ -749,16 +763,14 @@ while program_active:
                 current_linefollowing_state = "4-ng"
                 changed_black_contour = cv2.bitwise_not(img0_line_new)
 
-        if changed_black_contour is not False:
-            print("Changed black contour, LF State: ", current_linefollowing_state)
-            cv2.drawContours(img0, black_contours, -1, (0, 0, 255), 2)
-            new_black_contours, _ = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            if len(new_black_contours) > 0:
-                black_contours = new_black_contours
-            else:
-                print("No black contours found after changing contour")
-
-            changed_black_contour = False
+            if changed_black_contour is not False:
+                print("Changed black contour, LF State: ", current_linefollowing_state)
+                cv2.drawContours(img0, black_contours, -1, (0, 0, 255), 2)
+                new_black_contours, _ = cv2.findContours(changed_black_contour, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                if len(new_black_contours) > 0:
+                    black_contours = new_black_contours
+                else:
+                    print("No black contours found after changing contour")
 
         # --------------------------
         # REST OF LINE LINE FOLLOWER
@@ -812,7 +824,7 @@ while program_active:
 
         # Find the bottom left, and top right points
         black_bounding_box_BL = sorted(vert_sorted_black_bounding_points[:2], key=lambda point: point[0])[0]
-        black_bounding_box_TR = sorted(vert_sorted_black_bounding_points[2:], key=lambda point: point[0])[1]
+        black_bounding_box_TR = sorted(vert_sorted_black_bounding_points[-2:], key=lambda point: point[0])[1]
 
         # Get the angle of the line between the bottom left and top right points
         black_contour_angle = int(math.degrees(math.atan2(black_bounding_box_TR[1] - black_bounding_box_BL[1], black_bounding_box_TR[0] - black_bounding_box_BL[0])))
@@ -824,27 +836,35 @@ while program_active:
         # If the angle of the contour is big enough and the contour is close to the edge of the image (within bigTurnSideMargin pixels)
         # Then, the line likely is a big turn and we will need to turn more
         # 0 if None, 1 if left, 2 if right
-        isBigTurn = 0
-
-        bigTurnAngleMargin = 30
         bigTurnSideMargin = 30
-        if abs(black_contour_angle_new) > bigTurnAngleMargin:
-            if horz_sorted_black_bounding_points_top_2[0][0] < bigTurnSideMargin:
-                isBigTurn = 1
-            elif horz_sorted_black_bounding_points_top_2[1][0] > img0.shape[1] - bigTurnSideMargin:
-                isBigTurn = 2
+        bigTurnAngleMargin = 30
 
-        if isBigTurn == 1 and black_contour_angle_new > 0 or isBigTurn == 2 and black_contour_angle_new < 0:
+        lineHitsEdge = 0
+        if horz_sorted_black_bounding_points_top_2[0][0] < bigTurnSideMargin:
+            lineHitsEdge = 1
+        elif horz_sorted_black_bounding_points_top_2[1][0] > img0.shape[1] - bigTurnSideMargin:
+            lineHitsEdge = 2
+
+        isBigTurn = lineHitsEdge and abs(black_contour_angle_new) > bigTurnAngleMargin
+
+        if isBigTurn and ((lineHitsEdge == 1 and black_contour_angle_new > 0) or 
+                          (lineHitsEdge == 2 and black_contour_angle_new < 0)):
             black_contour_angle_new = black_contour_angle_new * -1
-
-        current_position = (black_contour_angle_new / max_angle) * angle_weight + (black_contour_error / max_error) * error_weight
-        current_position *= 100
 
         # The closer the topmost point is to the bottom of the screen, the more we want to turn
         topmost_point = sorted(black_bounding_box, key=lambda point: point[1])[0]
-        extra_pos = (topmost_point[1] / img0.shape[1]) * 10
-        if isBigTurn and extra_pos > 1:
-            current_position *= min(0.7 * extra_pos, 1)
+        extra_pos = (topmost_point[1] / img0.shape[0]) * 100
+
+        extra_mult = 0
+        if isBigTurn and extra_pos > 10:
+            extra_mult = 0.1 * extra_pos
+        elif lineHitsEdge and extra_pos > 60:
+            extra_mult = 0.07 * extra_pos
+        elif lineHitsEdge and extra_pos > 35:
+            extra_mult = 0.03 * extra_pos
+
+        current_position = (black_contour_angle_new / max_angle) * angle_weight + (black_contour_error / max_error) * error_weight
+        current_position *= 100 * max(extra_mult, 1)
 
         # PID stuff
         error = -current_position
@@ -906,12 +926,18 @@ while program_active:
         # ----------
         # DEBUG INFO
         # ----------
-
-        print(f"FPS: {fpsLoop}, {fpsCamera}"
-            + f"\tDel: {int(program_sleep_time*1000)}"
-            + f"\tSteer: {int(current_steering)}"
-            + f"\t{str(motor_vals)}"
-            + f"\tUSS: {round(front_dist, 1)}")
+        print(f"{fpsLoop:3.0f}|{fpsCamera:3.0f}"
+            + f"  An: {black_contour_angle:4d}/{black_contour_angle_new:4d}"
+            + f"  Er: {black_contour_error:4d}"
+            + f"  Po: {int(current_position):4d}"
+            + f"  Ex: {int(extra_pos):4d}"
+            + f"  BT: {isBigTurn:1d}-{extra_mult:4.2f}"
+            + f"  ST: {int(current_steering):4d}"
+            + f" = [{motor_vals[0]:4.0f}, {motor_vals[1]:4.0f}]"
+            + f"  LF: {'B' if changed_black_contour is not False else '-'} {(current_linefollowing_state or '-'):8}"
+            + f"  TP: {int(topmost_point[1]):3d}"
+            + f"  OB: {int(front_dist):3d}"
+            + f"  GR: {total_green_area:5d}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
@@ -956,12 +982,26 @@ while program_active:
             cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0, 255, 0), 3)
             cv2.drawContours(preview_image_img0_contours, [chosen_black_contour[2]], -1, (0, 0, 255), 3)
 
-            cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
-            cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2) # DEBUG
+            # Draw black_bounding_box
+            cv2.line(preview_image_img0_contours, black_bounding_box[0], black_bounding_box[1], (125, 200, 0), 2)
+            cv2.line(preview_image_img0_contours, black_bounding_box[1], black_bounding_box[2], (125, 200, 0), 2)
+            cv2.line(preview_image_img0_contours, black_bounding_box[2], black_bounding_box[3], (125, 200, 0), 2)
+            cv2.line(preview_image_img0_contours, black_bounding_box[3], black_bounding_box[0], (125, 200, 0), 2)
+
+            cv2.circle(preview_image_img0_contours, black_bounding_box_BL, 5, (125, 200, 0), -1)
+            cv2.circle(preview_image_img0_contours, black_bounding_box_TR, 5, (125, 200, 0), -1)
+            cv2.putText(preview_image_img0_contours, "BL", (black_bounding_box_BL[0] - 10, black_bounding_box_BL[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 200, 0), 2)
+            cv2.putText(preview_image_img0_contours, "TR", (black_bounding_box_TR[0] - 10, black_bounding_box_TR[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 200, 0), 2)
+
+            cv2.circle(preview_image_img0_contours, horz_sorted_black_bounding_points_top_2[0], 5, (125, 125, 0), -1)
+            cv2.circle(preview_image_img0_contours, horz_sorted_black_bounding_points_top_2[1], 5, (125, 125, 0), -1)
+
+            cv2.putText(preview_image_img0_contours, f"{black_contour_angle:4d} Angle Raw", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
+            cv2.putText(preview_image_img0_contours, f"{black_contour_angle_new:4d} Angle", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
+            cv2.putText(preview_image_img0_contours, f"{black_contour_error:4d} Error", (10, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
+            cv2.putText(preview_image_img0_contours, f"{int(current_position):4d} Position", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
+            cv2.putText(preview_image_img0_contours, f"{int(current_steering):4d} Steering", (10, 140), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
+            cv2.putText(preview_image_img0_contours, f"{int(extra_pos):4d} Extra", (10, 170), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 125, 255), 2) # DEBUG
 
             if turning is not None:
                 cv2.putText(preview_image_img0_contours, f"{turning} Turning", (10, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 0, 255), 2) # DEBUG

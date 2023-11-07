@@ -29,7 +29,7 @@ def distToLastLine(point: Tuple[int, int]) -> float:
 # This helps speed up calculations when calculating the distance of many points
 distToLastLineFormula = np.vectorize(distToLastLine)
 
-def findBestContours(contours: List[Contour], contour_thresh: int, last_line_pos: Tuple[int, int]) -> List[Contour]:
+def findBestContours(contours: List[Contour], contour_thresh: int, last_line_pos: Tuple[int, int]) -> List[object]:
     """
     Processes a set of contours to find the best one to follow
     Filters out contours that are too small,
@@ -45,7 +45,7 @@ def findBestContours(contours: List[Contour], contour_thresh: int, last_line_pos
         [
             contour_area: float,
             contour_rect: cv2.minAreaRect,
-            contour: np.array,
+            contour: Contour,
             distance_from_last_line: float
         ]
     """

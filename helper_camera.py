@@ -91,7 +91,7 @@ class CameraStream:
 
         self.cam.release()
 
-    def resize_image(self, img, target_w=355, target_h=264, offset_x=4, offset_y=104):
+    def resize_image(self, img, target_w=290, target_h=264, offset_x=-2, offset_y=104):
         start_x = (img.shape[1] // 2 - target_w // 2) + offset_x
         start_y = 0 + offset_y
 

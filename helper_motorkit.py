@@ -115,7 +115,7 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
     Returns:
         List[float]: The final left and right speeds of the motors.
     """
-    if skip_range is None: 
+    if skip_range is None:
         skip_range = [-15, 25]
 
     left_speed = base_speed + offset
