@@ -68,7 +68,7 @@ evac_cam_angle = 7                  # Angle of the camera when evacuating
 # ----------------
 program_active = True
 has_moved_windows = False
-program_sleep_time = 0.01
+program_sleep_time = 0.001
 
 current_steering = 0
 last_line_pos = np.array([100, 100])
@@ -274,31 +274,35 @@ if cam.read_stream_processed()["raw"] is None:
 # ---------
 # MAIN LOOP
 # ---------
+fpsTime = time.time()
 while program_active:
     try:
         # ---------------
         # FRAME BALANCING
         # ---------------
-        # time.sleep(program_sleep_time)
         frames += 1
+        fpsLoop = int(frames / (time.time() - fpsTime))
+        fpsCamera = cam.get_fps()
+
+        if frames > 400:
+            sleep_adjustment_amt = 0.0001
+            sleep_time_max = 0.02
+            sleep_time_min = 0.0001
+            target_fps = 70
+            if fpsLoop > target_fps + 5 and program_sleep_time < sleep_time_max:
+                program_sleep_time += sleep_adjustment_amt
+            elif fpsLoop < target_fps and program_sleep_time > sleep_time_min:
+                program_sleep_time -= sleep_adjustment_amt
+
+        if fpsLoop > 65:
+            time.sleep(program_sleep_time)
+
+        if frames > 5000:
+            fpsTime = time.time()
+            frames = 0
 
         if frames % 30 == 0 and frames != 0:
-            fpsLoop = int(frames / (time.time() - fpsTime))
-            fpsCamera = cam.get_fps()
-
-            # Try to balance out the processing time and the camera FPS
-            # sleep_adjustment_amt = 0.001
-            # sleep_time_max = 0.02
-            # sleep_time_min = 0.005
-            # if fpsLoop > fpsCamera + 5 and program_sleep_time < sleep_time_max:
-            #     program_sleep_time += sleep_adjustment_amt
-            # elif fpsLoop < fpsCamera and program_sleep_time > sleep_time_min:
-            #     program_sleep_time -= sleep_adjustment_amt
-
-            if frames > 500:
-                fpsTime = time.time()
-                frames = 0
-            print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {int(program_sleep_time*1000)}")
+            print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {program_sleep_time}")
 
         # ------------------
         # OBSTACLE AVOIDANCE
