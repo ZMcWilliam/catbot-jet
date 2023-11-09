@@ -18,13 +18,13 @@ import board
 import cv2
 import busio
 import numpy as np
-import adafruit_vl6180x
 import helper_camera
 import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
 import helper_config as config
 from helper_cmps14 import CMPS14
+from helper_tof import RangeSensorMonitor
 
 DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
 
@@ -133,8 +133,8 @@ cam = helper_camera.CameraStream(
 
 cmps = CMPS14(7, 0x61)
 
-vl6180x = adafruit_vl6180x.VL6180X(i2c)
-vl6180x_gain = adafruit_vl6180x.ALS_GAIN_1 # See test_tof.py for more values
+tof = RangeSensorMonitor()
+tof.start()
 
 def exit_gracefully(signum=None, frame=None) -> None:
     """
@@ -154,6 +154,8 @@ def exit_gracefully(signum=None, frame=None) -> None:
     program_active = False
     m.stop_all()
     cam.stop()
+    tof.stop()
+    tof.join()
     cv2.destroyAllWindows()
 
     # for u in USS.values():
@@ -301,12 +303,12 @@ while program_active:
         # ------------------
         # OBSTACLE AVOIDANCE
         # ------------------
-        front_dist = vl6180x.range
+        front_dist = tof.range_mm
         if 0 < front_dist < obstacle_threshold:
             print(f"Obstacle detected at {front_dist}cm... ", end="")
             m.stop_all()
             time.sleep(0.7)
-            front_dist = vl6180x.range
+            front_dist = tof.range_mm
             if 0 < front_dist < obstacle_threshold + 5:
                 print("Confirmed.")
                 avoid_obstacle()
@@ -496,8 +498,7 @@ while program_active:
                     break
 
                 continue # Don't run the rest of the follower, we don't really want to move forward in case we accidentally loose the red...
-            else:
-                red_stop_check = 0
+            red_stop_check = 0
 
         # -------------
         # INTERSECTIONS
@@ -779,7 +780,7 @@ while program_active:
         #Find the black contours
         sorted_black_contours = ck.findBestContours(black_contours, black_contour_threshold, last_line_pos)
         if len(sorted_black_contours) == 0:
-            print("No black contours found")
+            print("No black contours found after sorting")
 
             # This is a botchy temp fix so that sometimes we can handle the case where we lose the line,
             # and other times we can handle gaps in the line
@@ -926,18 +927,18 @@ while program_active:
         # ----------
         # DEBUG INFO
         # ----------
-        print(f"{fpsLoop:3.0f}|{fpsCamera:3.0f}"
-            + f"  An: {black_contour_angle:4d}/{black_contour_angle_new:4d}"
-            + f"  Er: {black_contour_error:4d}"
-            + f"  Po: {int(current_position):4d}"
-            + f"  Ex: {int(extra_pos):4d}"
+        print(f"{frames:4d} {fpsLoop:3.0f}|{fpsCamera:3.0f} @{(program_sleep_time*1000):3.1f}"
+            + f"  An:{black_contour_angle:4d}/{black_contour_angle_new:4d}"
+            + f"  Er:{black_contour_error:4d}"
+            + f"  Po:{int(current_position):4d}"
+            + f"  Ex:{int(extra_pos):4d}"
             + f"  BT: {isBigTurn:1d}-{extra_mult:4.2f}"
-            + f"  ST: {int(current_steering):4d}"
+            + f"  ST:{int(current_steering):4d}"
             + f" = [{motor_vals[0]:4.0f}, {motor_vals[1]:4.0f}]"
             + f"  LF: {'B' if changed_black_contour is not False else '-'} {(current_linefollowing_state or '-'):8}"
-            + f"  TP: {int(topmost_point[1]):3d}"
-            + f"  OB: {int(front_dist):3d}"
-            + f"  GR: {total_green_area:5d}")
+            + f"  TP:{int(topmost_point[1]):3d}"
+            + f"  OB:{int(front_dist):3d}"
+            + f"  GR:{total_green_area:5d}")
         if debug_state():
             # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
