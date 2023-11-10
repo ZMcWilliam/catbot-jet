@@ -23,27 +23,11 @@ import helper_camerakit as ck
 import helper_motorkit as m
 import helper_intersections
 import helper_config as config
+from helper_servokit import ServoManager
 from helper_cmps14 import CMPS14
 from helper_tof import RangeSensorMonitor
 
 DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
-
-# ------------
-# DEVICE PORTS
-# ------------
-# PORT_DEBUG_SWITCH = 21
-# PORT_SERVO_GATE = 12
-# PORT_SERVO_CLAW = 13
-# PORT_SERVO_LIFT = 18
-# PORT_SERVO_CAM = 19
-# PORT_USS_TRIG = {
-#     "front": 23,
-#     "side": 27,
-# }
-# PORT_USS_ECHO = {
-#     "front": 24,
-#     "side": 22,
-# }
 
 # -------------
 # CONFIGURATION
@@ -117,19 +101,9 @@ cam = helper_camera.CameraStream(
     processing_conf=config.processing_conf
 )
 
-# servo = {
-#     "gate": gpiozero.AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
-#     "claw": gpiozero.AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
-#     "lift": gpiozero.AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-88),   # -90=Up, 40=Down
-#     "cam": gpiozero.AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-64)       # -90=Down, 90=Up
-# }
+servo = ServoManager()
 
 # debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
-
-# USS = {
-#     key: gpiozero.DistanceSensor(echo=USS_ECHO, trigger=USS_TRIG)
-#     for key, USS_ECHO, USS_TRIG in zip(PORT_USS_ECHO.keys(), PORT_USS_ECHO.values(), PORT_USS_TRIG.values())
-# }
 
 cmps = CMPS14(7, 0x61)
 
@@ -157,12 +131,6 @@ def exit_gracefully(signum=None, frame=None) -> None:
     tof.stop()
     tof.join()
     cv2.destroyAllWindows()
-
-    # for u in USS.values():
-    #     u.close()
-
-    # for s in servo.values():
-    #     s.detach()
     sys.exit()
 
 signal.signal(signal.SIGINT, exit_gracefully)

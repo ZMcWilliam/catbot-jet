@@ -4,4 +4,6 @@ smbus2
 imutils
 tk
 adafruit-circuitpython-motorkit
+adafruit-circuitpython-servokit
+adafruit-circuitpython-pca9685
 adafruit-circuitpython-vl6180x

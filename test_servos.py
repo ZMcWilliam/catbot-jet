@@ -1,25 +1,17 @@
-from gpiozero import AngularServo
+from helper_servokit import ServoManager
 
-PORT_SERVO_GATE = 12
-PORT_SERVO_CLAW = 13
-PORT_SERVO_LIFT = 18
-PORT_SERVO_CAM = 19
+s = ServoManager()
 
-servo = {
-    "gate": AngularServo(PORT_SERVO_GATE, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-90),    # -90=Close, 90=Open
-    "claw": AngularServo(PORT_SERVO_CLAW, min_pulse_width=0.0005, max_pulse_width=0.002, initial_angle=-80),    # 0=Open, -90=Close
-    "lift": AngularServo(PORT_SERVO_LIFT, min_pulse_width=0.0005, max_pulse_width=0.0025, initial_angle=-80),   # -90=Up, 40=Down
-    "cam": AngularServo(PORT_SERVO_CAM, min_pulse_width=0.0006, max_pulse_width=0.002, initial_angle=-83)       # -90=Down, 90=Up
-}
+valid_servos = s.servos.keys()
 
 while True:
-    selected_servo = input("Select servo (gate, claw, lift, cam): ")
-    if selected_servo not in servo.keys():
-        raise Exception(f"Invalid servo {selected_servo}")
+    servo_key = input(f"Select servo ({', '.join(valid_servos)}): ")
+    if servo_key not in valid_servos:
+        raise Exception(f"Invalid servo {servo_key}")
 
-    selected_servo = servo[selected_servo]
+    servo = s.servos[servo_key]
 
-    current_angle = int(selected_servo.angle)
+    current_angle = int(servo.angle)
     current_dir = 1
     while True:
         step = input(f"At {current_angle}, enter step (q to quit): ")
@@ -32,21 +24,21 @@ while True:
             except ValueError:
                 step = 1
             current_angle += step
-            if current_angle > 90:
-                current_angle = 90
-            if current_angle < -90:
-                current_angle = -90
+            if current_angle > servo.r_max:
+                current_angle = servo.r_max
+            if current_angle < servo.r_min:
+                current_angle = servo.r_min
         else:
             try:
                 current_angle = int(step)
             except ValueError:
                 current_angle += current_dir
 
-                if current_angle > 90:
+                if current_angle > servo.r_max:
                     current_dir = -1
-                    current_angle = 90 - (current_angle - 90)
-                elif current_angle < -90:
+                    current_angle = servo.r_max - (current_angle - servo.r_max)
+                elif current_angle < servo.r_min:
                     current_dir = 1
-                    current_angle = -90 + (-90 - current_angle)
+                    current_angle = servo.r_min + (servo.r_min - current_angle)
 
-        selected_servo.angle = current_angle
+        servo.to(current_angle)
