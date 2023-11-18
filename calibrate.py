@@ -2,7 +2,7 @@ import time
 import json
 import numpy as np
 import cv2
-import helper_camera
+from helpers import camera as c
 
 # Load the calibration map from the JSON file
 with open("calibration.json", "r", encoding="utf-8") as json_file:
@@ -163,7 +163,7 @@ def show_selected_tab(tab_id):
         }
 
         if cam is None:
-            cam = helper_camera.CameraStream(
+            cam = c.CameraStream(
                 camera_num=0,
 
             )

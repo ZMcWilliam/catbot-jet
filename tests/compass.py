@@ -1,5 +1,5 @@
 import time
-from helper_cmps14 import CMPS14
+from helpers.cmps14 import CMPS14
 
 cmps14 = CMPS14(7, 0x61)
 

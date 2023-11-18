@@ -18,14 +18,15 @@ import board
 import cv2
 import busio
 import numpy as np
-import helper_camera
-import helper_camerakit as ck
-import helper_motorkit as m
-import helper_intersections
-import helper_config as config
-from helper_servokit import ServoManager
-from helper_cmps14 import CMPS14
-from helper_tof import RangeSensorMonitor
+
+from helpers import camera as c
+from helpers import camerakit as ck
+from helpers import motorkit as m
+from helpers import intersections
+from helpers import config
+from helpers.servokit import ServoManager
+from helpers.cmps14 import CMPS14
+from helpers.tof import RangeSensorMonitor
 
 DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
 
@@ -96,7 +97,7 @@ obstacle_dir = np.random.choice([-1, 1])
 # ------------------
 i2c = busio.I2C(board.SCL, board.SDA)
 
-cam = helper_camera.CameraStream(
+cam = c.CameraStream(
     camera_num=0,
     processing_conf=config.processing_conf
 )
@@ -677,8 +678,8 @@ while program_active:
                 if split_line[0][1] == split_line[1][1]:
                     split_line[0][1] += 1 # Move the first point up by 1 pixel
 
-                img0_line_new = helper_intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
-                img0_line_new = helper_intersections.CutMaskWithLine(split_line[0], split_line[1], img0_line_new, "left" if cut_direction else "right")
+                img0_line_new = intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
+                img0_line_new = intersections.CutMaskWithLine(split_line[0], split_line[1], img0_line_new, "left" if cut_direction else "right")
                 changed_black_contour = cv2.bitwise_not(img0_line_new)
 
             elif len(white_contours_filtered) == 4:
@@ -730,8 +731,8 @@ while program_active:
                     closest_BR = closest_TR
                     closest_TR = sorted(approx_TR, key=lambda point: abs(point[0] - closest_TR[0]))[1]
 
-                img0_line_new = helper_intersections.CutMaskWithLine(closest_BL, closest_TL, img0_line_new, "left")
-                img0_line_new = helper_intersections.CutMaskWithLine(closest_BR, closest_TR, img0_line_new, "right")
+                img0_line_new = intersections.CutMaskWithLine(closest_BL, closest_TL, img0_line_new, "left")
+                img0_line_new = intersections.CutMaskWithLine(closest_BR, closest_TR, img0_line_new, "right")
 
                 current_linefollowing_state = "4-ng"
                 changed_black_contour = cv2.bitwise_not(img0_line_new)

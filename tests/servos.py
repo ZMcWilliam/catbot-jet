@@ -1,4 +1,4 @@
-from helper_servokit import ServoManager
+from helpers.servokit import ServoManager
 
 s = ServoManager()
 

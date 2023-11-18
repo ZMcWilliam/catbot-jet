@@ -1,5 +1,5 @@
 import adafruit_vl6180x
-from helper_tof import RangeSensorMonitor
+from helpers.tof import RangeSensorMonitor
 
 tof = RangeSensorMonitor()
 tof.start()

@@ -3,10 +3,10 @@ import os
 import sys
 import signal
 import subprocess
-import helper_motorkit as m
-import Jetson.GPIO as GPIO
 from git import Repo
+from Jetson import GPIO
 from colorama import init
+from helpers import motorkit as m
 
 init()
 
@@ -57,7 +57,7 @@ while True:
                 print("\033[1;33m[RUNNER]\033[1;m \033[1;37mResurrecting Follower...")
                 state = 0
         if input_state and state == 0:
-            p = subprocess.Popen("/home/pi/Desktop/CatBot/start.sh", shell=True, preexec_fn=os.setsid) 
+            p = subprocess.Popen("/home/pi/Desktop/CatBot/start.sh", shell=True, preexec_fn=os.setsid)
             time.sleep(0.4)
             state = 1
             print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFollower started")
@@ -83,11 +83,11 @@ while True:
     except KeyboardInterrupt:
         try:
             resp = input("\033[1;33m[RUNNER]\033[1;m \033[1;37mAre you sure you want to quit? (y/n) ")
-        except KeyboardInterrupt: 
+        except KeyboardInterrupt:
             resp = "n"
         if resp == "y":
             try:
-                if p is not None and state == 1: 
+                if p is not None and state == 1:
                     os.killpg(p.pid, signal.SIGTERM)
             except Exception:
                 print("\033[1;33m[RUNNER]\033[1;m \033[1;37mFailed to stop follower, is it running?")

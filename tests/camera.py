@@ -1,11 +1,9 @@
 import time
 import cv2
-import helper_camera
-# import helper_config as config
+from helpers import camera
 
-cam = helper_camera.CameraStream(
+cam = camera.CameraStream(
     camera_num = 0,
-    # processing_conf = config.processing_conf
 )
 cam.wait_for_image()
 

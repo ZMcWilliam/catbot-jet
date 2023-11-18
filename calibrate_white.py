@@ -2,9 +2,9 @@ import json
 import time
 import cv2
 import numpy as np
-import helper_camera
+from helpers import camera as c
 
-cam = helper_camera.CameraStream(camera_num=0)
+cam = c.CameraStream(camera_num=0)
 cam.wait_for_image()
 
 calibration_images = {
