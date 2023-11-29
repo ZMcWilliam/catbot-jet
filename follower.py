@@ -18,6 +18,7 @@ import board
 import cv2
 import busio
 import numpy as np
+import tensorflow as tf
 
 from helpers import camera as c
 from helpers import camerakit as ck
@@ -66,6 +67,8 @@ intersection_state_debug = ["", time.time()]
 red_stop_check = 0
 evac_detect_check = 0
 
+silver_prediction = False
+
 pid_last_error = 0
 pid_integral = 0
 
@@ -91,6 +94,39 @@ no_black_contours = False
 # Choose a random side for the obstacle in case the first direction is not possible
 # A proper check should be added, but this is a quick fix for now
 obstacle_dir = np.random.choice([-1, 1])
+
+# --------------
+# LOAD ML MODELS
+# --------------
+model_silver = tf.saved_model.load("ml/model/silver/trt")
+infer_func_silver = model_silver.signatures["serving_default"]
+
+def infer_silver(frame):
+    """
+    Runs inference using the silver model on a given frame
+    Expects a grayscale input image
+
+    Args:
+        frame (np.array): The frame to the inference on
+
+    Returns:
+        int: 0 for "without", 1 for "with"
+    """
+    resized_frame = cv2.resize(frame, (72, 66))
+    input_data = np.expand_dims(resized_frame, axis=-1) # Add a channel dimension
+
+    # Convert input_data to a TensorFlow Tensor with a batch dimension
+    input_data = tf.convert_to_tensor(input_data, dtype=tf.float32)
+    input_data = tf.expand_dims(input_data, axis=0)
+
+    # Run inference
+    labelling = infer_func_silver(tf.constant(input_data, dtype=float))
+    label_key = list(labelling.keys())[0] # Currently dense_2
+    labels = labelling[label_key]
+
+    # Get the predicted class (0 for "without" and 1 for "with")
+    predicted_class = int(np.argmax(labels, axis=1))
+    return predicted_class == 1
 
 # ------------------
 # INITIALISE DEVICES
@@ -253,25 +289,25 @@ while program_active:
         fpsLoop = int(frames / (time.time() - fpsTime))
         fpsCamera = cam.get_fps()
 
-        if frames > 400:
-            sleep_adjustment_amt = 0.0001
-            sleep_time_max = 0.02
-            sleep_time_min = 0.0001
-            target_fps = 70
-            if fpsLoop > target_fps + 5 and program_sleep_time < sleep_time_max:
-                program_sleep_time += sleep_adjustment_amt
-            elif fpsLoop < target_fps and program_sleep_time > sleep_time_min:
-                program_sleep_time -= sleep_adjustment_amt
+        # if frames > 400:
+        #     sleep_adjustment_amt = 0.0001
+        #     sleep_time_max = 0.02
+        #     sleep_time_min = 0.0001
+        #     target_fps = 70
+        #     if fpsLoop > target_fps + 5 and program_sleep_time < sleep_time_max:
+        #         program_sleep_time += sleep_adjustment_amt
+        #     elif fpsLoop < target_fps and program_sleep_time > sleep_time_min:
+        #         program_sleep_time -= sleep_adjustment_amt
 
-        if fpsLoop > 65:
-            time.sleep(program_sleep_time)
+        # if fpsLoop > 65:
+        #     time.sleep(program_sleep_time)
 
         if frames > 5000:
             fpsTime = time.time()
             frames = 0
 
         if frames % 30 == 0 and frames != 0:
-            print(f"FPS: {fpsLoop}, {fpsCamera} \tDel: {program_sleep_time}")
+            print(f"{frames:4d} {fpsLoop:3.0f} {fpsCamera:2.0f}")
 
         # ------------------
         # OBSTACLE AVOIDANCE
@@ -301,12 +337,40 @@ while program_active:
         img0 = frame_processed["resized"].copy()
         img0_clean = img0.copy() # Used for displaying the image without any overlays
 
-        # img0_gray = frame_processed["gray"].copy()
+        img0_gray = frame_processed["gray"].copy()
         # img0_gray_scaled = frame_processed["gray_scaled"].copy()
         img0_binary = frame_processed["binary"].copy()
         img0_hsv = frame_processed["hsv"].copy()
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
+
+        # ----------------
+        # CHECK FOR SILVER
+        # ----------------
+        silver_inference_start = time.time()
+        if silver_prediction > 0 or frames % 2 == 0:
+            if infer_silver(img0_gray):
+                silver_prediction += 1
+            else:
+                silver_prediction = 0
+            silver_inference_time_ms = (time.time() - silver_inference_start) * 1000
+        else:
+            silver_prediction = 0
+            silver_inference_time_ms = 0
+
+        if silver_prediction > 20:
+            print("Silver Confirmed")
+            m.stop_all()
+            time.sleep(5)
+            continue
+        elif silver_prediction == 5:
+            print(f"Silver Detected - 5/20") 
+            m.run_tank_for_time(-30, -30, 100)
+            continue
+        elif silver_prediction > 5:
+            print(f"Silver Detected - {silver_prediction}/20") 
+            m.run_tank(20, 20)
+            continue
 
         # -----------
 
@@ -752,8 +816,13 @@ while program_active:
 
         #Find the black contours
         sorted_black_contours = ck.findBestContours(black_contours, black_contour_threshold, last_line_pos)
-        if len(sorted_black_contours) == 0:
-            print("No black contours found after sorting")
+        if len(sorted_black_contours) == 0 and silver_prediction > 0:
+            print(f"No black contours, but silver was found ({int(silver_prediction)})")
+            m.stop_all()
+            time.sleep(0.2)
+            continue
+        elif len(sorted_black_contours) == 0:
+            print("No black contours after sorting")
 
             # This is a botchy temp fix so that sometimes we can handle the case where we lose the line,
             # and other times we can handle gaps in the line
@@ -900,7 +969,10 @@ while program_active:
         # ----------
         # DEBUG INFO
         # ----------
-        print(f"{frames:4d} {fpsLoop:3.0f}|{fpsCamera:3.0f} @{(program_sleep_time*1000):3.1f}"
+        print(f"{frames:4d} {fpsLoop:3.0f} {fpsCamera:2.0f}"
+            # + f" @{(program_sleep_time*1000):3.1f}"
+            + (f"  S: {int(silver_prediction) or ' '} {silver_inference_time_ms:5.2f}ms" if silver_inference_time_ms > 0 else " "*14)
+            + f" |"
             + f"  An:{black_contour_angle:4d}/{black_contour_angle_new:4d}"
             + f"  Er:{black_contour_error:4d}"
             + f"  Po:{int(current_position):4d}"
@@ -979,6 +1051,9 @@ while program_active:
 
             if turning is not None:
                 cv2.putText(preview_image_img0_contours, f"{turning} Turning", (10, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 0, 255), 2) # DEBUG
+
+            if silver_prediction:
+                cv2.putText(img0, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
 
             if isBigTurn:
                 cv2.putText(preview_image_img0_contours, "Big Turn", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
