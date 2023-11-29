@@ -11,11 +11,12 @@ def gstreamer_pipeline(sensor_id=0, capture_width=1280, capture_height=720,
                        display_width=640, display_height=480, framerate=60, flip_method=2):
     return (
         f"nvarguscamerasrc sensor-id={sensor_id} ! "
-        f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, framerate=(fraction){framerate}/1 ! "
+        f"video/x-raw(memory:NVMM), width=(int){capture_width}, height=(int){capture_height}, format=(string)NV12, framerate=(fraction){framerate}/1 ! "
         f"nvvidconv flip-method={flip_method} ! "
         f"video/x-raw, width=(int){display_width}, height=(int){display_height}, format=(string)BGRx ! "
         f"videoconvert ! "
-        f"video/x-raw, format=(string)BGR ! appsink"
+        f"video/x-raw, format=(string)BGR ! "
+        f"appsink drop=true"
     )
 
 def get_camera(num):
