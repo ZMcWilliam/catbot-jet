@@ -3,4 +3,4 @@ env
 calibration.json
 ml/data_in
 ml/data_out
-ml/model
+ml/model/_tmp
