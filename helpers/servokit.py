@@ -32,7 +32,7 @@ class ServoManager:
     def __init__(self):
         self.kit = ServoKit(channels=16)
         self.servos = {
-            # "gate": self.create_servo(0, 180, 500, 2500, 0, 0, 180),
+            "gate": self.create_servo(0, 180, 500, 2500, 15, 15, 130),
             "lift": self.create_servo(1, 270, 500, 2500, 10, 10, 200),
             "cam":  self.create_servo(2, 180, 500, 2500, 35, 35, 90),
             "claw": self.create_servo(3, 180, 500, 2500, 20, 10, 77),
