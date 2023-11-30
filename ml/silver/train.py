@@ -13,8 +13,8 @@ MODEL = "silver"
 
 TRAIN_PATH = f"ml/data_out/{MODEL}/train"
 TEST_PATH = f"ml/data_out/{MODEL}/test"
-MODEL_OUTPUT_PATH = f"ml/model/{MODEL}/saved"
-MODEL_OUTPUT_PATH_TRT = f"ml/model/{MODEL}/trt"
+MODEL_OUTPUT_PATH = f"ml/model/_tmp/{MODEL}/saved"
+MODEL_OUTPUT_PATH_TRT = f"ml/model/{MODEL}-trt"
 
 # Ensure that the directories exist or create them
 for directory in [MODEL_OUTPUT_PATH, MODEL_OUTPUT_PATH_TRT]:
@@ -103,7 +103,7 @@ converter.build(input_fn=input_fn)
 converter.save(MODEL_OUTPUT_PATH_TRT)
 
 # Evaluate the TRT model
-loaded = tf.saved_model.load("ml/model/silver/trt")
+loaded = tf.saved_model.load(f"ml/model/{MODEL}/trt")
 infer = loaded.signatures["serving_default"]
 
 test_input_data = []

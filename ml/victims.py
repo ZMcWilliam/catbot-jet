@@ -12,7 +12,7 @@ cam = c.CameraStream(
 )
 cam.wait_for_image()
 
-model = YOLO("ml/model/victims_best.pt")
+model = YOLO("ml/model/victims.pt")
 
 frames = 0
 start_time = time.time()
@@ -44,10 +44,12 @@ try:
                     int(y2 * img0.shape[0] / 120),
                 )
 
+                conf = int(box.conf * 100)
+
                 cv2.rectangle(img0, (x1, y1), (x2, y2), (255, 0, 255), 3)
                 obj_type = int(box.cls[0])
 
-                cv2.putText(img0, str(obj_type), [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                cv2.putText(img0, f"{obj_type} ({conf})", [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
                 found_victims += 1
 
         if found_victims > 0:

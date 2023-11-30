@@ -18,7 +18,7 @@ infer = loaded.signatures["serving_default"]
 print("Loaded model. Waiting for first inference...")
 
 def prepare_frame(frame):
-    resized_frame = cv2.resize(frame, (0,0), fx=0.25, fy=0.25)
+    resized_frame = cv2.resize(frame, (72, 66))
     input_data = np.expand_dims(resized_frame, axis=-1) # Add a channel dimension
 
     # Convert input_data to a TensorFlow Tensor with a batch dimension
