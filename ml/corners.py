@@ -21,8 +21,8 @@ try:
         frames += 1
 
         frame_processed = cam.read_stream_processed()
-        img0 = frame_processed["raw"].copy()
-        img0_resized_evac = cv2.resize(img0, (145, 132))
+        img0_raw = frame_processed["raw"].copy()
+        img0_resized_evac = cv2.resize(img0_raw, (145, 132))
 
         start_inf = time.time()
         
@@ -36,30 +36,32 @@ try:
             for box in r.boxes:
                 x1, y1, x2, y2 = box.xyxy[0]
                 x1, y1, x2, y2 = (
-                    int(x1 * img0.shape[1] / 160),
-                    int(y1 * img0.shape[0] / 120),
-                    int(x2 * img0.shape[1] / 160),
-                    int(y2 * img0.shape[0] / 120),
+                    int(x1 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                    int(y1 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
+                    int(x2 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                    int(y2 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
                 )
                 
                 conf = int(box.conf * 100)
 
+                if conf < 70: continue
+                
                 obj_type = "red" if int(box.cls[0]) else "green"
                 obj_col = (0, 0, 255) if int(box.cls[0]) else (0, 255, 0)
 
-                cv2.rectangle(img0, (x1, y1), (x2, y2), obj_col, 3)
-                cv2.putText(img0, f"{obj_type} ({conf})", [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, obj_col, 2)
+                cv2.rectangle(img0_raw, (x1, y1), (x2, y2), obj_col, 3)
+                cv2.putText(img0_raw, f"{obj_type} ({conf})", [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, obj_col, 2)
                 found_corners += 1
 
         if found_corners > 0:
-            cv2.putText(img0, f"{found_corners} FOUND", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+            cv2.putText(img0_raw, f"{found_corners} FOUND", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
         else:
-            cv2.putText(img0, "NONE", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+            cv2.putText(img0_raw, "NONE", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
 
-        cv2.putText(img0, f"{inference_time_ms:.2f} ms", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
-        cv2.putText(img0, f"{current_fps:.1f} fps", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+        cv2.putText(img0_raw, f"{inference_time_ms:.2f} ms", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+        cv2.putText(img0_raw, f"{current_fps:.1f} fps", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
 
-        cv2.imshow("Corner Detection", img0)
+        cv2.imshow("Corner Detection", img0_raw)
 
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):

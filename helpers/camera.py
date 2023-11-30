@@ -161,17 +161,85 @@ class CameraStream:
             "line": line,
         }
 
+    # def process_image_gpu(self):
+    #     image = self.img
+    #     if image is None:
+    #         raise Exception(f"[CAMERA] C{self.num} has no image to process, run .take_image() first")
+
+    #     if self.processing_conf is None:
+    #         raise Exception(f"[CAMERA] C{self.num} has no conf for processing")
+
+    #     # Upload image to GPU
+    #     gpu_image = cv2.cuda_GpuMat()
+    #     gpu_image.upload(image)
+
+    #     # Resize and convert the image
+    #     gpu_resized = cv2.cuda.resize(gpu_image, (image.shape[1], 429))
+    #     gpu_resized_bgr = cv2.cuda.cvtColor(gpu_resized, cv2.COLOR_BGR2RGB)
+    #     resized = gpu_resized_bgr.download()
+
+    #     # Gray conversion
+    #     gpu_gray = cv2.cuda.cvtColor(gpu_resized_bgr, cv2.COLOR_BGR2GRAY)
+    #     # gpu_blurred = cv2.cuda.createGaussianBlur((5, 5), 0).apply(gpu_gray)
+    #     # gray = gpu_blurred.download()
+    #     gauss_filter = cv2.cuda.createGaussianFilter(srcType=cv2.CV_8U, dstType=cv2.CV_8U, ksize=(5, 5), sigma1=0, sigma2=0)
+    #     gpu_blurred = gauss_filter.apply(gpu_gray)
+    #     gray = gpu_blurred.download()
+
+    #     # Scale gray values based on the calibration map
+    #     gray_scaled = self.processing_conf["calibration_map"] * gray
+
+    #     # Get the binary image
+    #     black_line_threshold = self.processing_conf["black_line_threshold"]
+    #     _, gpu_binary = cv2.cuda.threshold(cv2.cuda_GpuMat(gray_scaled), black_line_threshold, 255, cv2.THRESH_BINARY)
+
+    #     binary = cv2.morphologyEx(gpu_binary.download(), cv2.MORPH_OPEN, np.ones((7,7),np.uint8))
+
+    #     # morph_filter = cv2.cuda.createMorphologyFilter(op=cv2.MORPH_OPEN,
+    #     #                                             srcType=cv2.CV_8U,
+    #     #                                             kernel=np.ones((7,7),np.uint8))
+    #     # gpu_morphed = morph_filter.apply(gpu_binary)
+    #     # binary = gpu_morphed.download()
+
+    #     # Find green in the image
+    #     gpu_hsv = cv2.cuda.cvtColor(gpu_resized_bgr, cv2.COLOR_BGR2HSV)
+    #     hsv = gpu_hsv.download()
+
+    #     green_turn_hsv_threshold = self.processing_conf["green_turn_hsv_threshold"]
+    #     green = cv2.bitwise_not(cv2.inRange(hsv, green_turn_hsv_threshold[0], green_turn_hsv_threshold[1]))
+    #     green = cv2.erode(green, np.ones((5, 5),np.uint8), iterations=1)
+
+    #     # # Find the line
+    #     # line = cv2.dilate(binary, np.ones((5, 5),np.uint8), iterations=2)
+    #     # line = cv2.bitwise_or(line, cv2.bitwise_not(green))        # dilate_filter = cv2.cuda.createMorphologyFilter(op=cv2.MORPH_DILATE,
+    #     #                                         srcType=cv2.CV_8U,
+    #     #                                         kernel=np.ones((5,5),np.uint8))
+    #     # gpu_line = dilate_filter.apply(cv2.cuda_GpuMat(binary))
+    #     # line = cv2.bitwise_or(gpu_line.download(), cv2.bitwise_not(green))
+
+    #     # Populate the processed data
+    #     self.processed = {
+    #         "raw": image,
+    #         "resized": resized,
+    #         "gray": gray,
+    #         "gray_scaled": gray_scaled,
+    #         "binary": binary,
+    #         "hsv": hsv,
+    #         "green": green,
+    #         # "line": line,
+    #     }
+
     def stop(self):
         print(f"[CAMERA] C{self.num} Stopping stream")
         self.stream_running = False
 
-        if self.capture_thread is not None:
-            self.capture_thread.join()
+        # if self.capture_thread is not None:
+        #     self.capture_thread.join()
 
     def signal_handler(self, signum, frame):
         print(f"\n[CAMERA] C{self.num} Signal received: {signum}. Initiating graceful shutdown...")
         self.stop()
-        sys.exit(0)
+        print(f"\n[CAMERA] C{self.num} Stream stopped. Exiting...")
 
     def set_processing_conf(self, conf):
         self.processing_conf = conf

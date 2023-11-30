@@ -4,7 +4,6 @@ import numpy as np
 with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
-calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
 
 with open("config.json", "r", encoding="utf-8") as json_file:
     config_data_raw = json.load(json_file)
@@ -32,22 +31,9 @@ for section in config_data_raw.values():
 
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
-    "black_rescue_threshold": config_data["black_rescue_threshold"],
     "green_turn_hsv_threshold": config_data["green_turn_hsv_threshold"],
     "red_hsv_threshold": config_data["red_hsv_threshold"],
-    "rescue_block_hsv_threshold": config_data["rescue_block_hsv_threshold"],
-    "rescue_circle_minradius_offset": config_data["rescue_circle_minradius_offset"],
-    "rescue_binary_gray_scale_multiplier": config_data["rescue_binary_gray_scale_multiplier"],
-    "rescue_circle_conf": {
-        "dp": config_data["rescue_circle_dp"],
-        "minDist": config_data["rescue_circle_minDist"],
-        "param1": config_data["rescue_circle_param1"],
-        "param2": config_data["rescue_circle_param2"],
-        "minRadius": config_data["rescue_circle_minRadius"],
-        "maxRadius": config_data["rescue_circle_maxRadius"],
-    },
-    "calibration_map": calibration_map,
-    "calibration_map_rescue": calibration_map_rescue,
+    "calibration_map": calibration_map
 }
 
 def get(key=None):

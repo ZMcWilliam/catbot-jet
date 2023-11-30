@@ -8,7 +8,6 @@ from helpers import camera as c
 with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
-calibration_map_rescue = 255 / np.array(calibration_data["calibration_map_rescue_w"])
 
 with open("config.json", "r", encoding="utf-8") as json_file:
     config_data = json.load(json_file)
@@ -113,7 +112,6 @@ def show_selected_tab(tab_id):
         config_values = {
             "calibration_map": calibration_map,
             "black_line_threshold": config_data["main"]["configs"]["black_line_threshold"]["data"]["val"],
-            "black_rescue_threshold": config_data["main"]["configs"]["black_rescue_threshold"]["data"]["val"],
             "green_turn_hsv_threshold": [np.array(bound) for bound in [
                 [
                     config_data["green"]["configs"]["green_turn_hsv_threshold"]["data"]["L-H"],
@@ -137,29 +135,7 @@ def show_selected_tab(tab_id):
                     config_data["red"]["configs"]["red_hsv_threshold"]["data"]["H-S"],
                     config_data["red"]["configs"]["red_hsv_threshold"]["data"]["H-V"]
                 ],
-            ]],
-            "rescue_block_hsv_threshold": [np.array(bound) for bound in [
-                [
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["L-H"],
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["L-S"],
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["L-V"]
-                ],
-                [
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["H-H"],
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["H-S"],
-                    config_data["block"]["configs"]["rescue_block_hsv_threshold"]["data"]["H-V"]
-                ],
-            ]],
-            "rescue_circle_conf": {
-                "dp": config_data["circle"]["configs"]["rescue_circle_dp"]["data"]["val"],
-                "minDist": config_data["circle"]["configs"]["rescue_circle_minDist"]["data"]["val"],
-                "param1": config_data["circle"]["configs"]["rescue_circle_param1"]["data"]["val"],
-                "param2": config_data["circle"]["configs"]["rescue_circle_param2"]["data"]["val"],
-                "minRadius": config_data["circle"]["configs"]["rescue_circle_minRadius"]["data"]["val"],
-                "maxRadius": config_data["circle"]["configs"]["rescue_circle_maxRadius"]["data"]["val"]
-            },
-            "rescue_circle_minradius_offset": config_data["circle"]["configs"]["rescue_circle_minradius_offset"]["data"]["val"],
-            "rescue_binary_gray_scale_multiplier": config_data["block"]["configs"]["rescue_binary_gray_scale_multiplier"]["data"]["val"]
+            ]]
         }
 
         if cam is None:
@@ -196,121 +172,6 @@ def show_selected_tab(tab_id):
         img0_red = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1]))
         img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
-        img0_gray_rescue_calibrated = calibration_map_rescue * img0_gray
-        img0_binary_rescue = ((img0_gray_rescue_calibrated > config_values["black_rescue_threshold"]) * 255).astype(np.uint8)
-        img0_binary_rescue = cv2.morphologyEx(img0_binary_rescue, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
-
-        img0_gray_rescue_scaled = img0_gray_rescue_calibrated * (config_values["rescue_binary_gray_scale_multiplier"] - 2.5)
-        img0_gray_rescue_scaled = np.clip(img0_gray_rescue_calibrated, 0, 255).astype(np.uint8)
-
-        img0_blurred = cv2.medianBlur(img0_gray_rescue_scaled, 9)
-
-        circles = cv2.HoughCircles(img0_blurred, cv2.HOUGH_GRADIENT, **{
-            "dp": config_values["rescue_circle_conf"]["dp"],
-            "minDist": config_values["rescue_circle_conf"]["minDist"],
-            "param1": config_values["rescue_circle_conf"]["param1"],
-            "param2": config_values["rescue_circle_conf"]["param2"],
-            "minRadius": config_values["rescue_circle_conf"]["minRadius"],
-            "maxRadius": config_values["rescue_circle_conf"]["maxRadius"],
-        })
-
-        img0_circles = img0_clean.copy()
-        sorted_circles = []
-        if circles is not None:
-            detected_circles = np.round(circles[0, :]).astype(int)
-            detected_circles = sorted(detected_circles, key = lambda v: [v[1], v[1]], reverse=True)
-
-            # If the circle is in the bottom half of the image, check that the radius is greater than 40
-            # valid_circles = []
-            # for (x, y, r) in detected_circles:
-            #     if y > config_values["rescue_circle_conf"]["heightBuffer"] and r > config_values["rescue_circle_conf"]["lowHeightMinRadius"]:
-            #         valid_circles.append([x, y, r])
-            #     elif y <= config_values["rescue_circle_conf"]["heightBuffer"]:
-            #         valid_circles.append([x, y, r])
-
-            # Draw the detected circles on the original image
-            for (x, y, r) in detected_circles:
-                cv2.circle(img0_circles, (x, y), r, (0, 0, 255), 2)
-                cv2.circle(img0_circles, (x, y), 2, (0, 0, 255), 3)
-
-            height_bar_qty = 13
-            height_bar_minRadius = [a - 7 for a in [90, 85, 80, 72, 66, 58, 52, 44, 38, 31, 23, 16, 15]] # This could become a linear function... but it works for now
-            height_bar_maxRadius = [b + config_values["rescue_circle_minradius_offset"] for b in height_bar_minRadius]
-
-            height_bars = [(img0.shape[0] / height_bar_qty) * i for i in range(height_bar_qty - 1, -1, -1)]
-            height_bar_circles = [[] for i in range(height_bar_qty)]
-            for (x, y, r) in detected_circles:
-                for i in range(height_bar_qty):
-                    if y >= height_bars[i]:
-                        if r >= height_bar_minRadius[i] and r <= height_bar_maxRadius[i]:
-                            height_bar_circles[i].append([x, y, r, i])
-                        break
-
-                # Sort the circles in each bar by x position
-                height_bar_circles[i] = sorted(height_bar_circles[i], key = lambda v: [v[0], v[0]])
-
-            # Compile circles into a single list, horizontally in height bar (closest to furthest)
-            for i in range(height_bar_qty):
-                sorted_circles += height_bar_circles[i]
-
-            # Draw horizontal lines for height bars
-            for i in range(height_bar_qty):
-                cv2.line(img0_circles, (0, int(height_bars[i])), (img0.shape[1], int(height_bars[i])), (255, 255, 255), 1)
-
-            # Draw the sorted circles on the original image
-            for i, (x, y, r, bar) in enumerate(sorted_circles):
-                cv2.circle(img0_circles, (x, y), r, (0, 255, 0), 2)
-                cv2.circle(img0_circles, (x, y), 2, (0, 255, 0), 3)
-                print(bar, i, r)
-                cv2.putText(img0_circles, f"{bar}-{i}-{r}", (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (125, 125, 255), 2)
-        else:
-            cv2.putText(img0_circles, "No circles detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-        img0_block_mask = cv2.inRange(img0_hsv, config_values["rescue_block_hsv_threshold"][0], config_values["rescue_block_hsv_threshold"][1])
-        img0_binary_rescue_block = cv2.bitwise_and(cv2.bitwise_not(img0_binary_rescue), img0_block_mask)
-        img0_binary_rescue_block = cv2.morphologyEx(img0_binary_rescue_block, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
-
-        contours_block = cv2.findContours(img0_binary_rescue_block, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[-2]
-        contours_block = [{
-            "contour": c,
-            "contourArea": cv2.contourArea(c),
-            "boundingRect": cv2.boundingRect(c),
-            "touching_sides": [],
-            "near_sides": []
-        } for c in contours_block]
-
-        # Figure out which sides of the image the contours are touching
-        side_threshold = [10, 50]
-        for i, contour in enumerate(contours_block):
-            x, y, w, h = contour["boundingRect"]
-
-            if x < side_threshold[0]: contours_block[i]["touching_sides"].append("left")
-            if y < side_threshold[0]: contours_block[i]["touching_sides"].append("top")
-            if x + w > img0.shape[1] - side_threshold[0]: contours_block[i]["touching_sides"].append("right")
-            if y + h > img0.shape[0] - side_threshold[0]: contours_block[i]["touching_sides"].append("bottom")
-
-            if x < side_threshold[1]: contours_block[i]["near_sides"].append("left")
-            if y < side_threshold[1]: contours_block[i]["near_sides"].append("top")
-            if x + w > img0.shape[1] - side_threshold[1]: contours_block[i]["near_sides"].append("right")
-            if y + h > img0.shape[0] - side_threshold[1]: contours_block[i]["near_sides"].append("bottom")
-
-        # Filter by area and ensure it doesn't touch the top
-        contours_block = [c for c in contours_block if c["contourArea"] > 10000 and "top" not in c["touching_sides"]]
-
-        # Sort by area
-        contours_block = sorted(contours_block, key=lambda c: c["contourArea"], reverse=True)
-
-        cv2.drawContours(img0, [c["contour"] for c in contours_block], -1, (0, 0, 255), 2)
-        if len(contours_block) > 0:
-            contour_block = contours_block[0]
-
-            cv2.rectangle(img0, contour_block["boundingRect"], (0, 255, 0), 2)
-
-            cx = contour_block["boundingRect"][0] + contour_block["boundingRect"][2] / 2
-            cy = contour_block["boundingRect"][1] + contour_block["boundingRect"][3] / 2
-
-            cv2.circle(img0, (int(cx), int(cy)), 5, (0, 0, 255), -1)
-
         for req_img in config_data[selected_tab]["images"]:
             img0_preview = None
 
@@ -322,11 +183,6 @@ def show_selected_tab(tab_id):
             elif req_img == "img0_green": img0_preview = img0_green
             elif req_img == "img0_red": img0_preview = img0_red
             elif req_img == "img0_line": img0_preview = img0_line
-            elif req_img == "img0_binary_rescue": img0_preview = img0_binary_rescue
-            elif req_img == "img0_gray_rescue_scaled": img0_preview = img0_gray_rescue_scaled
-            elif req_img == "img0_binary_rescue_block": img0_preview = img0_binary_rescue_block
-            elif req_img == "img0_circles": img0_preview = img0_circles
-            elif req_img == "img0_block_mask": img0_preview = img0_block_mask
 
             img0_preview = cv2.resize(img0_preview, (0, 0), fx=0.8, fy=0.7)
 

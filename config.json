@@ -16,15 +16,6 @@
                 "data": {
                     "val": 180
                 }
-            },
-            "black_rescue_threshold": {
-                "title": "Blk Tresh Resc",
-                "description": "Value used to get a binary image inside the rescue zone",
-                "range":  [0, 255],
-                "type": "int",
-                "data": {
-                    "val": 175
-                }
             }
         }
     },
@@ -73,116 +64,6 @@
                     "H-H": 180,
                     "H-S": 200,
                     "H-V": 255
-                }
-            }
-        }
-    },
-    "block": {
-        "title": "BLOCK",
-        "images": [
-            "img0",
-            "img0_gray_scaled",
-            "img0_binary_rescue",
-            "img0_gray_rescue_scaled",
-            "img0_binary",
-            "img0_block_mask",
-            "img0_binary_rescue_block"
-        ],
-        "configs": {
-            "rescue_block_hsv_threshold": {
-                "title": "Evac Block G",
-                "description": "HSV threshold for creating the green rescue block mask",
-                "range": [0, 255],
-                "type": "hsv",
-                "data": {
-                    "L-H": 0,
-                    "L-S": 34,
-                    "L-V": 55,
-                    "H-H": 114,
-                    "H-S": 210,
-                    "H-V": 210
-                }
-            },
-            "rescue_binary_gray_scale_multiplier": {
-                "title": "Evac Gray Mult",
-                "description": "Simulated increase in exposure to help circle detection",
-                "range": [0, 5],
-                "type": "float",
-                "data": {
-                    "val": 1.7
-                }
-            }
-        }
-    },
-    "circle": {
-        "title": "CIRCLE",
-        "images": [
-            "img0",
-            "img0_gray_scaled",
-            "img0_circles"
-        ],
-        "configs": {
-            "rescue_circle_dp": {
-                "title": "dp",
-                "description": "HoughCircles Accumulator Value",
-                "range": [0.1, 10],
-                "type": "float",
-                "data": {
-                    "val": 1
-                }
-            },
-            "rescue_circle_minDist": {
-                "title": "minDist",
-                "description": "Minimum distance between circles",
-                "range": [1, 400],
-                "type": "int",
-                "data": {
-                    "val": 52
-                }
-            },
-            "rescue_circle_param1": {
-                "title": "param1",
-                "description": "Sensitivity/High threshold for canny edge detection (lower = more circles)",
-                "range": [1, 100],
-                "type": "int",
-                "data": {
-                    "val": 21
-                }
-            },
-            "rescue_circle_param2": {
-                "title": "param2",
-                "description": "Accumulator threshold for circle detection (higher = more reliable circles, but may miss some)",
-                "range": [1, 100],
-                "type": "int",
-                "data": {
-                    "val": 27
-                }
-            },
-            "rescue_circle_minRadius": {
-                "title": "minRadius",
-                "description": "Minimum radius of circle",
-                "range": [1, 200],
-                "type": "int",
-                "data": {
-                    "val": 4
-                }
-            },
-            "rescue_circle_maxRadius": {
-                "title": "maxRadius",
-                "description": "Maximum radius of circle",
-                "range": [1, 200],
-                "type": "int",
-                "data": {
-                    "val": 92
-                }
-            },
-            "rescue_circle_minradius_offset" : {
-                "title": "minRadius offset",
-                "description": "Offset used for checking minimum radiuses",
-                "range": [0, 255],
-                "type": "int",
-                "data": {
-                    "val": 40
                 }
             }
         }

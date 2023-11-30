@@ -19,6 +19,7 @@ import cv2
 import busio
 import numpy as np
 import tensorflow as tf
+from ultralytics import YOLO
 
 from helpers import camera as c
 from helpers import camerakit as ck
@@ -38,7 +39,7 @@ max_error = 145                     # Maximum error value when calculating a per
 max_angle = 90                      # Maximum angle value when calculating a percentage
 error_weight = 0.5                  # Weight of the error value when calculating the PID input
 angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
-black_contour_threshold = 5000      # Minimum area of a contour to be considered valid
+black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
 
 KP = 1.5                            # Proportional gain
 KI = 0                              # Integral gain
@@ -53,10 +54,12 @@ evac_cam_angle = 7                  # Angle of the camera when evacuating
 # SYSTEM VARIABLES
 # ----------------
 program_active = True
+has_attempted_exit = False
 has_moved_windows = False
 program_sleep_time = 0.001
 
 current_steering = 0
+current_time = time.time()
 last_line_pos = np.array([100, 100])
 
 turning = None
@@ -73,17 +76,9 @@ pid_last_error = 0
 pid_integral = 0
 
 frames = 0
-current_time = time.time()
 fpsTime = time.time()
 fpsLoop = 0
 fpsCamera = 0
-
-rescue_mode = "init"
-ball_found_qty = [0, 0] # Silver, Black
-
-last_circle_pos = None
-circle_check_counter = 0
-bottom_block_approach_counter = 0
 
 time_since_ramp_start = 0
 time_ramp_end = 0
@@ -98,7 +93,10 @@ obstacle_dir = np.random.choice([-1, 1])
 # --------------
 # LOAD ML MODELS
 # --------------
-model_silver = tf.saved_model.load("ml/model/silver/trt")
+model_victims = YOLO("ml/model/victims.pt")
+model_corners = YOLO("ml/model/corners.pt")
+
+model_silver = tf.saved_model.load("ml/model/silver-trt")
 infer_func_silver = model_silver.signatures["serving_default"]
 
 def infer_silver(frame):
@@ -155,13 +153,14 @@ def exit_gracefully(signum=None, frame=None) -> None:
         signum (int, optional): Signal number. Defaults to None.
         frame (frame, optional): Current stack frame. Defaults to None.
     """
-    global program_active
-    if not program_active:
+    global has_attempted_exit
+    if has_attempted_exit:
         # We already tried to exit, but may have gotten stuck. Force the exit.
         print("\nForcefully Exiting")
         sys.exit()
 
     print("\n\nExiting Gracefully\n")
+    has_attempted_exit = True
     program_active = False
     m.stop_all()
     cam.stop()
@@ -223,6 +222,47 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
 
         print(f"{debug_prefix}Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}\tSpeed: {rotate_speed}")
 
+def run_to_dist(target_dist: int, cutoff_error: int = 5, speed: int = 40, speed_slow: int = 25, timeout: int = 5000, use_min: bool = False) -> bool:
+    """
+    Drives motors until the given distance is reached.
+
+    Args:
+        target_dist (int): The distance to drive to, in mm
+        cutoff_error (int, optional): The error threshold to stop driving. Defaults to 10.
+        speed (int, optional): The speed to drive at. Defaults to 40.
+        speed_slow (int, optional): The speed to drive at when the error is near the cutoff. Defaults to 30.
+        timeout (int, optional): The timeout in milliseconds. Defaults to 5000.
+        use_min (bool, optional): Whether to accept any distance less than the target. Defaults to False.
+
+    Returns:
+        bool: True if the distance was reached, False if the timeout was reached.
+    """
+    start_time = time.time()
+    while time.time() - start_time < (timeout / 1000):
+        front_dist = tof.range_mm
+
+        if use_min and 0 < front_dist <= target_dist:
+            m.stop_all()
+            return True
+        
+        error = front_dist - target_dist
+
+        if abs(error) < cutoff_error:
+            print(f"FOUND Dist: {front_dist}\tTarget: {target_dist}\tError: {error}")
+            m.stop_all()
+            return True
+        
+        selected_speed = speed if abs(error) > 100 else speed_slow
+        if error < 0:
+            selected_speed = -selected_speed
+        
+        m.run_tank(selected_speed, selected_speed)
+        print(f"Dist: {front_dist}\tTarget: {target_dist}\tError: {error}\tSpeed: {selected_speed}")
+    
+    print("Timeout")
+    m.stop_all()
+    return False
+
 # ------------------
 # OBSTACLE AVOIDANCE
 # ------------------
@@ -257,11 +297,555 @@ def avoid_obstacle() -> None:
     m.stop_all()
     time.sleep(0.2)
 
+# ---------------
+# EVACUATION ZONE
+# ---------------
+def run_evac():
+    global fpsCamera
+    global program_active
+    
+    framesEvac = 0
+    fpsTimeEvac = time.time()
+
+    rescue_mode = "init"
+    victim_capture_qty = 0
+    victim_check_counter = 0
+    corner_check_counter = 0
+
+    m.stop_all()
+
+    print("EVAC: Waiting for first inference of models...")
+    frame_processed = cam.read_stream_processed()
+    img0_raw = frame_processed["raw"].copy()
+    img0_resized_evac = cv2.resize(img0, (160, 120))
+
+    evac_start = time.time()
+    model_victims(img0_resized_evac, task="detect")
+    print("Loaded Victims Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+
+    evac_start = time.time()
+    model_corners(img0_resized_evac, task="detect")
+    print("Loaded Corners Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+
+    evac_start = time.time()
+
+    while True:
+        if int(time.time() - evac_start) % 10 == 0:
+            print(f"EVAC MODE: {rescue_mode} EVAC TIME: {int(time.time() - evac_start)}")
+
+        if time.time() - evac_start > 120 and rescue_mode == "victim":
+            print("VICTIMS TOOK TOO LONG - SKIPPING TO BLOCK")
+            rescue_mode = "block_green"
+
+        framesEvac += 1
+
+        fpsEvac = int(framesEvac/(time.time()-fpsTimeEvac))
+        fpsCamera = cam.get_fps()
+        if framesEvac % 20 == 0 and framesEvac != 0:
+            print(f"Evac Mode: {rescue_mode} | Evac FPS: {fpsEvac} | Camera FPS: {cam.get_fps()} | Sleep time: {int(program_sleep_time*1000)}")
+
+        frame_processed = cam.read_stream_processed()
+        img0_raw = frame_processed["raw"]
+        img0_resized_evac = cv2.resize(img0_raw, (160, 120))
+
+        # -------------
+        # INITIAL ENTER
+        # -------------
+        if rescue_mode == "init":
+            # TODO: Ensure robot won't drive out of the arena if exit is opposite to entry
+
+            print("Entering Evacuation Zone")
+            initial_time = time.time()
+            run_to_dist(130, 5, 40, 25, 8000, False)
+            if time.time() - initial_time > 4:
+                m.run_tank_for_time(-40, -40, 2000)
+            else: # Probably ran into a wall, let's try force align to it
+                for i in range(6): # avoid climbing a wall lol
+                    m.run_tank_for_time(30, 30, 500)
+                    time.sleep(0.1)
+                m.run_tank_for_time(-40, -40, 1000)
+
+            # Rotate and find the bearing matching the smallest distance
+            target_bearing = cmps.read_bearing_16bit()
+
+            lowest_dist = [tof.range_mm, target_bearing]
+
+            initial_time = time.time()
+            last_pass_time = time.time()
+            passes = 0
+
+            m.run_tank(30, -30)
+            while time.time() - initial_time < 10:
+                current_dist = tof.range_mm
+                if current_dist < lowest_dist[0]:
+                    lowest_dist = [current_dist, cmps.read_bearing_16bit()]
+
+                current_bearing = cmps.read_bearing_16bit()
+                error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+                if time.time() - last_pass_time > 3 and error < 5:
+                    if passes < 1:
+                        last_pass_time = time.time()
+                        passes += 1
+                    else:
+                        m.stop_all()
+                        break
+                print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
+
+            print(f"Lowest: {lowest_dist[0]} at {lowest_dist[1]}")
+
+            time.sleep(1)
+
+            # Rotate to the bearing with the lowest distance
+            target_bearing = lowest_dist[1]
+            align_to_bearing(target_bearing, 2, 10, "ROTATE: ")
+
+            run_to_dist(400, 5, 40, 25, 5000, False)
+
+            print("Done. Finding Victims...")
+
+            servo.cam.toMin()
+            servo.lift.toMax()
+            servo.claw.toMax()
+            servo.cam.to(80)
+            time.sleep(0.5)
+
+            rescue_mode = "victim"
+            fpsTimeEvac = time.time()
+            framesEvac = 0
+            continue
+
+        # --------------
+        # LOCATE VICTIMS
+        # --------------
+        # TODO: Add an initial check that after 4 rotations of seeing nothing, give up, run green corner, then exit
+        elif rescue_mode == "victim":
+            if victim_capture_qty >= 3:
+                print("Found all victims")
+                rescue_mode = "corner_green"
+
+            servo.gate.toMin()
+            servo.lift.toMax()
+            servo.claw.toMax()
+            servo.cam.to(80)
+
+            start_inf = time.time()
+            victims_results = model_victims(img0_resized_evac)
+            inference_time_ms = (time.time() - start_inf) * 1000
+
+            found_victims = []
+            for r in victims_results:
+                for box in r.boxes:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    x1, y1, x2, y2 = (
+                        int(x1 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                        int(y1 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
+                        int(x2 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                        int(y2 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
+                    )
+
+                    conf = int(box.conf * 100)
+
+                    obj_type = int(box.cls[0])
+
+                    vert_weight = 2
+                    midpoint_x = (x1 + x2) / 2
+                    midpoint_y = (y1 + y2) / 2
+                    horizontal_distance = midpoint_x - (img0_raw.shape[1] / 2)
+                    vertical_distance = midpoint_y - img0_raw.shape[0]
+                    dist_amt = int(math.sqrt(horizontal_distance ** 2 + (vertical_distance * vert_weight) ** 2))
+                        
+                    found_victims.append([obj_type, conf, dist_amt, [midpoint_x, midpoint_y], [horizontal_distance, vertical_distance], [x1, y1, x2, y2]])
+
+                    cv2.rectangle(img0_raw, (x1, y1), (x2, y2), (255, 0, 255), 3)
+                    cv2.putText(img0_raw, f"{obj_type} ({conf}) {dist_amt}", [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+
+            v_can_approach = False
+            v_target = None
+
+            # Only approach silver victims until both are found or 80 seconds have passed
+            if victim_capture_qty < 2 and time.time() - evac_start < 80:
+                found_victims = [v for v in found_victims if v[0] == 1]
+
+            # Regardless of count (perhaps we incorrectly counted...), always ignore a black victim if a silver exists too
+            if len(found_victims) >= 2:
+                filtered_victims = [v for v in found_victims if v[0] == 1]
+                if len(filtered_victims) > 0: # This would only be False if we had 2 black victims... somehow
+                    found_victims = filtered_victims
+
+            if len(found_victims) >= 1:
+                found_victims = sorted(found_victims, key=lambda x: x[2])
+                v_target = found_victims[0]
+                
+                # If a victim is within these limits (horz/vert distance offsets), we can approach it
+                approach_range = [[-85, 85], [-100, 0]]
+
+                v_can_approach = approach_range[0][0] < v_target[4][0] < approach_range[0][1] and approach_range[1][0] < v_target[4][1] < approach_range[1][1]
+                    
+                if v_can_approach:
+                    victim_check_counter += 1
+                    cv2.putText(img0_raw, f"APPROACH {victim_check_counter}", (10, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                else:
+                    victim_check_counter = 0
+
+                # Highlight the target
+                cv2.rectangle(img0_raw, (v_target[5][0], v_target[5][1]), (v_target[5][2], v_target[5][3]), (0, 255, 0), 3)
+
+                # Draw a box around the appraoch range
+                cv2.rectangle(
+                    img0_raw, 
+                    (int(img0_raw.shape[1] / 2) + approach_range[0][0], int(img0_raw.shape[0]) + approach_range[1][0]), 
+                    (int(img0_raw.shape[1] / 2) + approach_range[0][1], int(img0_raw.shape[0]) + approach_range[1][1]), 
+                    (0, 255, 255), 
+                    2
+                )
+
+                # Draw midpoint with coord
+                cv2.circle(img0_raw, (int(v_target[3][0]), int(v_target[3][1])), 5, (0, 0, 255), -1)
+                cv2.putText(img0_raw, f"{v_target[3][0]}, {v_target[3][1]}", (int(v_target[3][0]) + 10, int(v_target[3][1]) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                
+                # Draw the horizontal and vertical distance just below
+                cv2.putText(img0_raw, f"X: {v_target[4][0]}", (int(v_target[3][0]) + 10, int(v_target[3][1]) + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 165, 255), 2)
+                cv2.putText(img0_raw, f"Y: {v_target[4][1]}", (int(v_target[3][0]) + 10, int(v_target[3][1]) + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 165, 255), 2)
+
+                cv2.putText(img0_raw, f"{len(found_victims)} FOUND", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+            else:
+                victim_check_counter = 0
+                cv2.putText(img0_raw, "NONE", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+
+            cv2.putText(img0_raw, f"{inference_time_ms:.2f} ms", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0_raw, f"{fpsEvac:.1f} fps", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+
+            # Define the motor speeds
+            left_speed = None
+            right_speed = None
+
+            if v_target is not None:
+                if victim_check_counter >= 3:
+                    cv2.putText(img0_raw, "COLLECTING", (10, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.imshow("img0_raw", img0_raw)
+
+                    k = cv2.waitKey(1)
+                    if k & 0xFF == ord('q'):
+                        program_active = False
+                        break
+                    
+                    # 3 valid approach signals in a row, stop and grab
+                    victim_capture_qty += 1
+
+                    m.run_tank(30, 30)
+                    time.sleep(0.2)
+                    servo.claw.toMin()
+                    time.sleep(0.6)
+                    m.run_tank_for_time(-30, -30, 500)
+                    servo.cam.toMin() # Get the camera out of the way
+                    servo.lift.toMin()
+                    time.sleep(0.8)
+
+                    if v_target[0] == 1: # Let go of silver balls immediately
+                        servo.claw.toMax()
+                        time.sleep(1)
+
+                        # Return to search
+                        servo.lift.toMax()
+                        servo.cam.to(80)
+                        time.sleep(1)
+                    
+                    if v_target[0] == 0 or victim_capture_qty == 3: # If we've grabbed a black ball, hold onto it and end victim search
+                        victim_check_counter = 0
+                        rescue_mode = "corner_green"
+                    continue
+                elif victim_check_counter > 0:
+                    # Stop, and make sure we see the circle a bit more
+                    left_speed = 0
+                    right_speed = 0
+
+                # Calculate the horizontal and vertical distances
+                horizontal_distance = v_target[4][0]
+                vertical_distance = v_target[4][1]
+
+                if vertical_distance >= -200:
+                    # Target is closer in height, steer on the spot
+                    if -60 <= horizontal_distance <= 60:
+                        # Within acceptable horizontal range, slowly go forward
+                        left_speed = 30
+                        right_speed = 30
+                    elif horizontal_distance < -60:
+                        # Target is to the left, turn left
+                        left_speed = -30
+                        right_speed = 30
+                    elif horizontal_distance > 60:
+                        # Target is to the right, turn right
+                        left_speed = 30
+                        right_speed = -30
+                else:
+                    # Target is further away
+                    if -80 <= horizontal_distance <= 80:
+                        # Within acceptable horizontal range, move forward
+                        left_speed = 40
+                        right_speed = 40
+                    else:
+                        steering_factor = horizontal_distance / (img0_raw.shape[1] / 2)
+                        left_speed = 20 + (40 * steering_factor)
+                        right_speed = 20 - (40 * steering_factor)
+
+            if left_speed is None or right_speed is None:
+                left_speed = -30
+                right_speed = 30
+
+            m.run_tank(left_speed, right_speed)
+
+            # Draw speeds
+            cv2.putText(img0_raw, f"L: {left_speed}", (img0_raw.shape[1] - 100, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 172, 134), 2)
+            cv2.putText(img0_raw, f"R: {right_speed}", (img0_raw.shape[1] - 100, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 172, 134), 2)
+
+            cv2.putText(img0_raw, f"{victim_capture_qty}/3", (img0_raw.shape[1] - 200, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            if debug_state("rescue"):
+                cv2.imshow("img0_raw", img0_raw)
+
+                k = cv2.waitKey(1)
+                if k & 0xFF == ord('q'):
+                    program_active = False
+                    break
+
+        # -------------------------
+        # LOCATE CORNERS AND RESCUE
+        # -------------------------
+        elif rescue_mode == "corner_green" or rescue_mode == "corner_red":
+            servo.gate.toMin()
+            servo.lift.toMin()
+            servo.claw.toMin()
+            servo.cam.toMax()
+
+            start_inf = time.time()
+            corners_results = model_corners(img0_resized_evac)
+            inference_time_ms = (time.time() - start_inf) * 1000
+
+            found_corners = []
+            for r in corners_results:
+                for box in r.boxes:
+                    x1, y1, x2, y2 = box.xyxy[0]
+                    x1, y1, x2, y2 = (
+                        int(x1 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                        int(y1 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
+                        int(x2 * img0_raw.shape[1] / img0_resized_evac.shape[1]),
+                        int(y2 * img0_raw.shape[0] / img0_resized_evac.shape[0]),
+                    )
+
+                    conf = int(box.conf * 100)
+
+                    if conf < 70: continue
+
+                    obj_type = "red" if int(box.cls[0]) else "green"
+                    obj_col = (0, 0, 255) if int(box.cls[0]) else (0, 255, 0)
+
+                    midpoint_x = (x1 + x2) / 2
+                    midpoint_y = (y1 + y2) / 2
+                    horizontal_distance = midpoint_x - (img0_raw.shape[1] / 2)
+                    vertical_distance = midpoint_y - img0_raw.shape[0]
+                    box_area = (x2 - x1) * (y2 - y1)
+
+                    found_corners.append([obj_type, conf, box_area, [midpoint_x, midpoint_y], [horizontal_distance, vertical_distance], [x1, y1, x2, y2]])
+
+                    cv2.rectangle(img0_raw, (x1, y1), (x2, y2), obj_col, 3)
+                    cv2.putText(img0_raw, f"{obj_type} ({conf})", [x1, y1], cv2.FONT_HERSHEY_SIMPLEX, 1, obj_col, 2)
+
+            c_can_approach = False
+            c_target = None
+
+            # Filter out the corner type we're not looking for
+            found_corners = [c for c in found_corners if c[0] == ("green" if rescue_mode == "corner_green" else "red")]
+
+            if len(found_corners) >= 1:
+                # Sort by area, and get the largest
+                found_corners = sorted(found_corners, key=lambda x: x[2])
+                c_target = found_corners[0]
+
+                # If a victim is within these limits (horz/vert distance offsets), we can approach it
+                approach_range = [[-85, 85], [-100, 0]]
+
+                xL, xR = sorted([c_target[5][0], c_target[5][2]])
+                yT, yB = sorted([c_target[5][1], c_target[5][3]])
+                iW = img0_raw.shape[1]
+                iH = img0_raw.shape[0]
+                
+                # Two conditions for approach:
+                # - If both x coords are within side_thresh_a of each edge of the image 
+                # - If the box touches the bottom of the image 
+                #   whilst one side is within side_thresh_a of the edge and the other is within side_thresh_b# of the other edge
+                side_thresh_a = 20
+                side_thresh_b = 25 
+
+                c_can_approach = (
+                    (xL < side_thresh_a and xR > iW - side_thresh_a)
+                    or 
+                    (
+                        yB > iH - side_thresh_a and
+                        (
+                            (xL < iW * (side_thresh_b / 100) and xR > iW - side_thresh_a)
+                            or
+                            (xL < side_thresh_a and xR > iW * ((100 - side_thresh_b) / 100))
+                        )
+                    )
+                )
+
+                if c_can_approach:
+                    corner_check_counter += 1
+                    cv2.putText(img0_raw, f"APPROACH {corner_check_counter}", (10, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                else:
+                    corner_check_counter = 0
+
+                # Draw a box around the appraoch range
+                cv2.rectangle(
+                    img0_raw, 
+                    (int(img0_raw.shape[1] / 2) + approach_range[0][0], int(img0_raw.shape[0]) + approach_range[1][0]), 
+                    (int(img0_raw.shape[1] / 2) + approach_range[0][1], int(img0_raw.shape[0]) + approach_range[1][1]), 
+                    (0, 255, 255), 
+                    2
+                )
+
+                # Draw midpoint with coord
+                cv2.circle(img0_raw, (int(c_target[3][0]), int(c_target[3][1])), 5, (0, 0, 255), -1)
+                cv2.putText(img0_raw, f"{c_target[3][0]}, {c_target[3][1]}", (int(c_target[3][0]) + 10, int(c_target[3][1]) + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                
+                # Draw the horizontal and vertical distance just below
+                cv2.putText(img0_raw, f"X: {c_target[4][0]}", (int(c_target[3][0]) + 10, int(c_target[3][1]) + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 165, 255), 2)
+                cv2.putText(img0_raw, f"Y: {c_target[4][1]}", (int(c_target[3][0]) + 10, int(c_target[3][1]) + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (80, 165, 255), 2)
+            else:
+                corner_check_counter = 0
+                cv2.putText(img0_raw, "NONE", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+
+            cv2.putText(img0_raw, f"{inference_time_ms:.2f} ms", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0_raw, f"{fpsEvac:.1f} fps", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+
+            # Define the motor speeds
+            left_speed = None
+            right_speed = None
+
+            if c_target is not None:
+                if corner_check_counter >= 3:
+                    cv2.putText(img0_raw, "RESCUING", (10, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                    cv2.imshow("img0_raw", img0_raw)
+    
+                    k = cv2.waitKey(1)
+                    if k & 0xFF == ord('q'):
+                        program_active = False
+                        break
+                    
+                    m.stop_all()
+                    time.sleep(2)
+                    m.run_tank_for_time(30, 30, 3000)
+
+                    m.run_tank_for_time(-40, -40, 1400)
+                    time.sleep(0.1)
+                    start_bearing = cmps.read_bearing_16bit()
+                    align_to_bearing(start_bearing - 180, 10, debug_prefix="EVAC Align - ")
+                    time.sleep(0.1)
+                    m.run_tank_for_time(-35, -35, 1000)
+                    if rescue_mode == "corner_red":
+                        servo.claw.toMax() # Release the held black ball
+                    servo.gate.toMax()
+                    time.sleep(0.5)
+                    for i in range(12):
+                        m.run_tank_for_time(100, 100, 150)
+                        m.run_tank_for_time(-100, -100, 250)
+                    servo.gate.toMin()
+                    servo.claw.toMin()
+                    m.run_tank_for_time(35, 35, 1000)
+                    time.sleep(1)
+                    
+                    corner_check_counter = 0
+                    if rescue_mode == "corner_green":
+                        rescue_mode = "corner_red"
+                    else:
+                        rescue_mode = "exit"
+                    continue
+                elif corner_check_counter > 0:
+                    # Stop, and make sure we see the circle a bit more
+                    left_speed = 0
+                    right_speed = 0
+
+                # Calculate the horizontal and vertical distances
+                horizontal_distance = c_target[4][0]
+                vertical_distance = c_target[4][1]
+
+                if vertical_distance >= -200:
+                    # Target is closer in height, steer on the spot
+                    if -60 <= horizontal_distance <= 60:
+                        # Within acceptable horizontal range, slowly go forward
+                        left_speed = 30
+                        right_speed = 30
+                    elif horizontal_distance < -60:
+                        # Target is to the left, turn left
+                        left_speed = -30
+                        right_speed = 30
+                    elif horizontal_distance > 60:
+                        # Target is to the right, turn right
+                        left_speed = 30
+                        right_speed = -30
+                else:
+                    # Target is further away
+                    if -80 <= horizontal_distance <= 80:
+                        # Within acceptable horizontal range, move forward
+                        left_speed = 40
+                        right_speed = 40
+                    else:
+                        steering_factor = horizontal_distance / (img0_raw.shape[1] / 2)
+                        left_speed = 20 + (40 * steering_factor)
+                        right_speed = 20 - (40 * steering_factor)
+
+            if left_speed is None or right_speed is None:
+                left_speed = -30
+                right_speed = 30
+
+            m.run_tank(left_speed, right_speed)
+
+            # Draw speeds
+            cv2.putText(img0_raw, f"L: {left_speed}", (img0_raw.shape[1] - 100, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 172, 134), 2)
+            cv2.putText(img0_raw, f"R: {right_speed}", (img0_raw.shape[1] - 100, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 172, 134), 2)
+
+            cv2.putText(img0_raw, f"{victim_capture_qty}/3", (img0_raw.shape[1] - 200, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+            if debug_state("rescue"):
+                cv2.imshow("img0_raw", img0_raw)
+
+                k = cv2.waitKey(1)
+                if k & 0xFF == ord('q'):
+                    program_active = False
+                    break
+
+        # -----------
+        # EXIT (TODO)
+        # -----------
+        elif rescue_mode == "exit":
+            print("Exiting Evacuation Zone")
+            time.sleep(2)
+            break
+
+
 # ------------------------
 # WAIT FOR VISION TO START
 # ------------------------
 m.stop_all()
 os.system("cat motd.txt")
+
+# Ensure frames have been processed at least once
+if cam.read_stream_processed()["raw"] is None:
+    print("Waiting for first frame...", end="")
+    while cam.read_stream_processed()["raw"] is None:
+        time.sleep(0.1)
+    print(" Done")
+
+# ------------------------
+# WAIT FOR FIRST INFERENCE
+# ------------------------
+print("Waiting for first silver inference...")
+start_inf = time.time()
+infer_silver(cam.read_stream_processed()["gray"])
+inference_time_ms = (time.time() - start_inf) * 1000
+print(f"Initial Silver Inference: {inference_time_ms:.2f} ms")
+
 for i in range(3, 0, -1):
     print(f"Starting in {i}...", end="\r")
     time.sleep(1)
@@ -269,12 +853,6 @@ for i in range(3, 0, -1):
 # Clear the countdown line
 print("\033[K")
 print()
-
-# Ensure frames have been processed at least once
-if cam.read_stream_processed()["raw"] is None:
-    print("Waiting for first frame")
-    while cam.read_stream_processed()["raw"] is None:
-        time.sleep(0.1)
 
 # ---------
 # MAIN LOOP
@@ -350,7 +928,7 @@ while program_active:
         silver_inference_start = time.time()
         if silver_prediction > 0 or frames % 2 == 0:
             if infer_silver(img0_gray):
-                silver_prediction += 1
+                silver_prediction += 1 # TODO: Also check some aspects of the image with normal vision stuff, e.g. white must be at top of image
             else:
                 silver_prediction = 0
             silver_inference_time_ms = (time.time() - silver_inference_start) * 1000
@@ -360,8 +938,8 @@ while program_active:
 
         if silver_prediction > 20:
             print("Silver Confirmed")
-            m.stop_all()
-            time.sleep(5)
+            run_evac()
+            silver_prediction = 0
             continue
         elif silver_prediction == 5:
             print(f"Silver Detected - 5/20") 
@@ -827,16 +1405,21 @@ while program_active:
             # This is a botchy temp fix so that sometimes we can handle the case where we lose the line,
             # and other times we can handle gaps in the line
             # TODO: Remove this, and implement a proper line following fix
-            if not no_black_contours:
-                no_black_contours_mode = "straight" if no_black_contours_mode == "steer" else "steer"
-                no_black_contours = True
+            # if not no_black_contours:
+            #     no_black_contours_mode = "straight" if no_black_contours_mode == "steer" else "steer"
+            #     no_black_contours = True
 
             # We've lost any black contour, so it's possible we have encountered a gap in the line
             # Hence, go straight.
             #
             # Optimally, this should figure out if the line lost was in the centre and hence we haven't just fallen off the line.
             # Going forward, instead of using current_steering, means if we fall off the line, we have little hope of getting back on...
-            new_steer = current_steering if no_black_contours_mode == "steer" else 0
+            # new_steer = current_steering if no_black_contours_mode == "steer" else 0
+
+            # TODO: Check if touches sides of screen instead (maybe? idk)
+            new_steer = current_steering
+            if -40 < new_steer and new_steer < 40:
+                new_steer = 0
             m.run_steer(follower_speed, 100, new_steer)
 
             preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
@@ -989,7 +1572,8 @@ while program_active:
             # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
             # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
 
-            preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
+            # preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
+            preview_image_img0 = img0
             cv2.imshow("img0", preview_image_img0)
 
             # preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
@@ -1052,11 +1636,11 @@ while program_active:
             if turning is not None:
                 cv2.putText(preview_image_img0_contours, f"{turning} Turning", (10, 220), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (125, 0, 255), 2) # DEBUG
 
-            if silver_prediction:
-                cv2.putText(img0, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
-
             if isBigTurn:
                 cv2.putText(preview_image_img0_contours, "Big Turn", (10, 250), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+            if silver_prediction:
+                cv2.putText(img0, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
 
             cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
             cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
