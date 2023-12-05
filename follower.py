@@ -451,10 +451,6 @@ def run_evac():
         if int(time.time() - evac_start) % 10 == 0:
             print(f"EVAC MODE: {rescue_mode} EVAC TIME: {int(time.time() - evac_start)}")
 
-        if time.time() - evac_start > 120 and rescue_mode == "victim":
-            print("VICTIMS TOOK TOO LONG - SKIPPING TO BLOCK")
-            rescue_mode = "block_green"
-
         framesEvac += 1
 
         fpsEvac = int(framesEvac/(time.time()-fpsTimeEvac))
@@ -537,10 +533,14 @@ def run_evac():
         # --------------
         # LOCATE VICTIMS
         # --------------
-        # TODO: Add an initial check that after 4 rotations of seeing nothing, give up, run green corner, then exit
         elif rescue_mode == "victim":
             if victim_capture_qty >= 3:
                 print("Found all victims")
+                rescue_mode = "corner_green"
+
+            # TODO: PLANE CODE - NEEDS TESTING
+            if time.time() - fpsTimeEvac > 30 + (victim_capture_qty * 40):
+                print("VICTIMS TOOK TOO LONG - SKIPPING TO GREEN CORNER")
                 rescue_mode = "corner_green"
 
             servo.gate.toMin()
