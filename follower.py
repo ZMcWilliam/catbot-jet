@@ -467,18 +467,23 @@ def run_evac():
         # INITIAL ENTER
         # -------------
         if rescue_mode == "init":
-            # TODO: Ensure robot won't drive out of the arena if exit is opposite to entry
-
             print("Entering Evacuation Zone")
-            initial_time = time.time()
-            run_to_dist(130, 5, 40, 25, 8000, False)
-            if time.time() - initial_time > 4:
+            # Ensure robot won't drive out of the arena if exit is opposite to entry
+            if tof.range_mm > 1300:
+                m.run_tank_for_time(40, 40, 2000)
+                align_to_bearing(cmps.read_bearing_16bit() - 90, 10, debug_prefix="EVAC ENTRY: ")
+                run_to_dist(130, 5, 40, 25, 8000, False)
                 m.run_tank_for_time(-40, -40, 2000)
-            else: # Probably ran into a wall, let's try force align to it
-                for i in range(6): # avoid climbing a wall lol
-                    m.run_tank_for_time(30, 30, 500)
-                    time.sleep(0.1)
-                m.run_tank_for_time(-40, -40, 1000)
+            else:
+                initial_time = time.time()
+                run_to_dist(130, 5, 40, 25, 8000, False)
+                if time.time() - initial_time > 4:
+                    m.run_tank_for_time(-40, -40, 2000)
+                else: # Probably ran into a wall, let's try force align to it
+                    for i in range(6): # avoid climbing a wall lol
+                        m.run_tank_for_time(30, 30, 500)
+                        time.sleep(0.1)
+                    m.run_tank_for_time(-40, -40, 1000)
 
             # Rotate and find the bearing matching the smallest distance
             target_bearing = cmps.read_bearing_16bit()
@@ -658,7 +663,7 @@ def run_evac():
                     time.sleep(0.2)
                     servo.claw.toMin()
                     time.sleep(0.6)
-                    m.run_tank_for_time(-30, -30, 500)
+                    m.run_tank_for_time(-30, -30, 900)
                     servo.cam.toMin() # Get the camera out of the way
                     servo.lift.toMin()
                     time.sleep(0.8)
