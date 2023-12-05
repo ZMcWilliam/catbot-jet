@@ -832,7 +832,8 @@ def run_evac():
             if c_target is not None:
                 if corner_check_counter >= 3:
                     cv2.putText(img0_raw, "RESCUING", (10, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.imshow("img0_raw", img0_raw)
+                    img0_raw_scaled = cv2.resize(img0_raw, (img0.shape[1], int(img0.shape[1] * (img0_raw.shape[0] / img0_raw.shape[1]))))
+                    cv2.imshow("img0_raw", img0_raw_scaled)
     
                     k = cv2.waitKey(1)
                     if k & 0xFF == ord('q'):
@@ -914,7 +915,8 @@ def run_evac():
             cv2.putText(img0_raw, f"{victim_capture_qty}/3", (img0_raw.shape[1] - 200, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             if debug_state("rescue"):
-                cv2.imshow("img0_raw", img0_raw)
+                img0_raw_scaled = cv2.resize(img0_raw, (img0.shape[1], int(img0.shape[1] * (img0_raw.shape[0] / img0_raw.shape[1]))))
+                cv2.imshow("img0_raw", img0_raw_scaled)
 
                 k = cv2.waitKey(1)
                 if k & 0xFF == ord('q'):
@@ -1019,6 +1021,7 @@ while program_active:
         # This prevents us from reading a modified image on the next loop, and things breaking
 
         img0 = frame_processed["resized"].copy()
+        img0_raw = frame_processed["raw"].copy()
         img0_clean = img0.copy() # Used for displaying the image without any overlays
 
         img0_gray = frame_processed["gray"].copy()
@@ -1027,6 +1030,9 @@ while program_active:
         img0_hsv = frame_processed["hsv"].copy()
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
+
+        if debug_state():
+            cv2.imshow("img0", img0)
 
         # ----------------
         # CHECK FOR SILVER
@@ -1531,7 +1537,7 @@ while program_active:
             preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
 
             if debug_state():
-                cv2.imshow("img0 - NBC", preview_image_img0)
+                cv2.imshow("img0_nbc", img0)
                 k = cv2.waitKey(1)
                 if k & 0xFF == ord('q'):
                     program_active = False
@@ -1673,46 +1679,8 @@ while program_active:
             + f"  TP:{int(topmost_point[1]):3d}"
             + f"  OB:{int(front_dist):3d}"
             + f"  GR:{total_green_area:5d}")
+
         if debug_state():
-            # cv2.drawContours(img0, [chosen_black_contour[2]], -1, (0,255,0), 3) # DEBUG
-            # cv2.drawContours(img0, [black_bounding_box], 0, (255, 0, 255), 2)
-            # cv2.line(img0, black_leftmost_line_points[0], black_leftmost_line_points[1], (255, 20, 51, 0.5), 3)
-
-            # preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
-            preview_image_img0 = img0
-            cv2.imshow("img0", preview_image_img0)
-
-            # preview_image_img0_clean = cv2.resize(img0_clean, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_clean", preview_image_img0_clean)
-
-            # preview_image_img0_binary = cv2.resize(img0_binary, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_binary", preview_image_img0_binary)
-
-            # preview_image_img0_line = cv2.resize(img0_line, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_line", preview_image_img0_line)
-
-            # preview_image_img0_green = cv2.resize(img0_green, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_green", preview_image_img0_green)
-
-            # preview_image_img0_gray = cv2.resize(img0_gray, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_gray", preview_image_img0_gray)
-
-            # def mouseCallbackHSV(event, x, y, flags, param):
-            #     if event == cv2.EVENT_MOUSEMOVE and flags == cv2.EVENT_FLAG_LBUTTON:
-            #         # Print HSV value only when the left mouse button is pressed and mouse is moving
-            #         hsv_value = img0_hsv[y, x]
-            #         print(f"HSV: {hsv_value}")
-            # # Show HSV preview with text on hover to show HSV values
-            # preview_image_img0_hsv = cv2.resize(img0_hsv, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_hsv", preview_image_img0_hsv)
-            # cv2.setMouseCallback("img0_hsv", mouseCallbackHSV)
-
-            # preview_image_img0_gray_scaled = cv2.resize(img0_gray_scaled, (0,0), fx=0.8, fy=0.7)
-            # cv2.imshow("img0_gray_scaled", preview_image_img0_gray_scaled)
-
-            # Show a preview of the image with the contours drawn on it, black as red and white as blue
-
-            # if frames % 5 == 0:
             preview_image_img0_contours = img0_clean.copy()
             cv2.drawContours(preview_image_img0_contours, white_contours, -1, (255, 0, 0), 3)
             cv2.drawContours(preview_image_img0_contours, black_contours, -1, (0, 255, 0), 3)
@@ -1756,20 +1724,32 @@ while program_active:
             # preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0_contours", preview_image_img0_contours)
 
+            if not has_moved_windows:
+                # Placeholder for images that are yet to show
+                img0_empty = np.zeros(img0.shape, np.uint8)
+                cv2.imshow("img0_nbc", img0_empty)
+                cv2.imshow("img0_red", img0_empty)
+                cv2.imshow("img0_raw", img0_empty)
+
             k = cv2.waitKey(1)
             if k & 0xFF == ord('q'):
                 program_active = False
                 break
 
+            if k & 0xFF == ord('p'):
+                m.stop_all()
+                pids = input(f"Enter Speed, KP, KI, KD, split by spaces ({follower_speed} {KP} {KI} {KD}): ").split(" ")
+                follower_speed = int(pids[0])
+                KP = float(pids[1])
+                KI = float(pids[2])
+                KD = float(pids[3])
+
             if not has_moved_windows:
-                cv2.moveWindow("img0", 100, 100)
-                # cv2.moveWindow("img0_binary", 100, 800)
-                # cv2.moveWindow("img0_line", 100, 600)
-                # cv2.moveWindow("img0_green", 600, 600)
-                # cv2.moveWindow("img0_gray", 0, 0)
-                # cv2.moveWindow("img0_hsv", 0, 0)
-                # cv2.moveWindow("img0_gray_scaled", 0, 0)
-                cv2.moveWindow("img0_contours", 700, 100)
+                cv2.moveWindow("img0", 75, 50)
+                cv2.moveWindow("img0_contours", 75, 50)
+                cv2.moveWindow("img0_nbc", 675, 50)
+                cv2.moveWindow("img0_red", 975, 50)
+                cv2.moveWindow("img0_raw", 1275, 50)
                 has_moved_windows = True
     except Exception:
         print("UNHANDLED EXCEPTION: ")
