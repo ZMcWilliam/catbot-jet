@@ -47,9 +47,9 @@ error_weight = 0.5                  # Weight of the error value when calculating
 angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
 
-KP = 1.5                            # Proportional gain
+KP = 2.2                            # Proportional gain
 KI = 0                              # Integral gain
-KD = 0.08                           # Derivative gain
+KD = 0.1                            # Derivative gain
 
 follower_speed = 40                 # Base speed of the line follower
 obstacle_threshold = 50             # Minimum distance threshold for obstacles (mm)
@@ -1191,7 +1191,7 @@ while program_active:
                     print("No black contours found after changing contour")
 
             print("GREEN TURN STUFF")
-        elif turning is not None and last_green_time + 1 < time.time():
+        elif turning is not None and last_green_time + 0.4 < time.time():
             turning = None
             print("No longer turning")
 
@@ -1597,7 +1597,7 @@ while program_active:
         extra_pos = (topmost_point[1] / img0.shape[0]) * 100
 
         extra_mult = 0
-        if isBigTurn and extra_pos > 10:
+        if isBigTurn and extra_pos > 25:
             extra_mult = 0.1 * extra_pos
         elif lineHitsEdge and extra_pos > 60:
             extra_mult = 0.07 * extra_pos
