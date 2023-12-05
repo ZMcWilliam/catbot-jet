@@ -1035,6 +1035,11 @@ while program_active:
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
 
+        img0_line_not = cv2.bitwise_not(img0_line)
+
+        raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
         if debug_state():
             cv2.imshow("img0", img0)
 
@@ -1044,7 +1049,29 @@ while program_active:
         silver_inference_start = time.time()
         if silver_prediction > 0 or frames % 2 == 0:
             if infer_silver(img0_gray):
-                silver_prediction += 1 # TODO: Also check some aspects of the image with normal vision stuff, e.g. white must be at top of image
+                # TODO: PLANE CODE - NEEDS TESTING
+                # We need to run some extra checks, just in case the model returned a false positive
+                # As silver makes the image output inconsistent, we can check that:
+                # - The top 20px of the image must all be white
+                # - A black comtour that touches the bottom of the image must exist
+                # - A black contour that touches both sides of the image (within 20px) must exist
+                # - Very little to no green is in the image
+
+                top_check_threshold = 20
+                if sum([sum(a) for a in img0_binary[0:top_check_threshold]]) == img0_binary.shape[1] * 255 * top_check_threshold:
+                    sides_touching = []
+                    for black_rect in [cv2.boundingRect(c) for c in black_contours if cv2.contourArea(c) > 2000]:
+                        if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_binary.shape[0] - 3:
+                            sides_touching.append("bottom")
+                        if "left" not in sides_touching and black_rect[0] < 20:
+                            sides_touching.append("left")
+                        if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_binary.shape[1] - 20:
+                            sides_touching.append("right")
+                        
+                        total_green_area = np.count_nonzero(img0_green == 0)
+                        if len(sides_touching) == 3 and total_green_area < 500:
+                            silver_prediction += 1
+                            break
             else:
                 silver_prediction = 0
             silver_inference_time_ms = (time.time() - silver_inference_start) * 1000
@@ -1068,8 +1095,6 @@ while program_active:
 
         # -----------
 
-        raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
         # Filter white contours based on area
         white_contours = []
         for contour in raw_white_contours:
@@ -1080,10 +1105,6 @@ while program_active:
             print("No white contours found")
             continue
 
-        # Find black contours
-        # If there are no black contours, skip the rest of the loop
-        img0_line_not = cv2.bitwise_not(img0_line)
-        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         if len(black_contours) == 0:
             is_broken = False
             new_steer = current_steering
@@ -1112,14 +1133,9 @@ while program_active:
         # -----------
         # GREEN TURNS
         # -----------
-        total_green_area = np.count_nonzero(img0_green == 0)
-        black_contours_turn = None
-
-        # print("Green: ", total_green_area)
-
         img0_line_new = img0_line.copy()
+        total_green_area = np.count_nonzero(img0_green == 0)
 
-        # Check if there is a significant amount of green pixels
         if total_green_area > (4000 if not turning else 1000):
             changed_img0_line = None
 
