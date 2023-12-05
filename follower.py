@@ -1407,130 +1407,152 @@ while program_active:
                 if "4-ng" in current_linefollowing_state:
                     current_linefollowing_state = "3-ng-4-ex"
 
-                intersection_state_debug = ["3-ng", time.time()]
-                # Get the center of each contour
-                white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
-
-                # Sort the contours from left to right - Based on the centre of the contour's horz val
-                sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
-
-                # Simplify the contours to get the corner points
-                approx_contours = [ck.simplifiedContourPoints(contour[0], 0.03) for contour in sorted_contours_horz]
-
-                # Middle of contour centres
-                mid_point = (
-                    int(sum(contour[1][0] for contour in sorted_contours_horz) / len(sorted_contours_horz)),
-                    int(sum(contour[1][1] for contour in sorted_contours_horz) / len(sorted_contours_horz))
-                )
-
-                # Get the closest point of the approx contours to the mid point
-                def closestPointToMidPoint(approx_contour, mid_point):
-                    return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
-
-                # Get the closest points of each approx contour to the mid point, and store the index of the contour to back reference later
-                closest_points = [
-                    [closestPointToMidPoint(approx_contour, mid_point), i]
-                    for i, approx_contour in enumerate(approx_contours)
-                ]
-
-                # Get the closest points, sorted by distance to mid point
-                sorted_closest_points = sorted(closest_points, key=lambda point: ck.pointDistance(point[0], mid_point))
-                closest_2_points_vert_sort = sorted(sorted_closest_points[:2], key=lambda point: point[0][1])
-
-                # If a point is touching the top/bottom of the screen, it is quite possibly invalid and will cause some issues with cutting
-                # So, we will find the next best point, the point inside the other contour that is at the top of the screen, and is closest to the X value of the other point
-                for i, point in enumerate(closest_2_points_vert_sort):
-                    if point[0][1] > img0_line_new.shape[0] - 10 or point[0][1] < 10:
-                        # Find the closest point to the x value of the other point
-                        other_point_x = closest_2_points_vert_sort[1 - i][0][0]
-                        other_point_approx_contour_i = closest_2_points_vert_sort[1 - i][1]
-
-                        closest_points_to_other_x = sorted(
-                            approx_contours[other_point_approx_contour_i],
-                            key=lambda point, x=other_point_x: abs(point[0] - x)
-                        )
-                        new_valid_points = [
-                            point for point in closest_points_to_other_x
-                            if not np.isin(point, [
-                                closest_2_points_vert_sort[0][0],
-                                closest_2_points_vert_sort[1][0]
-                            ]).any()
-                        ]
-                        if len(new_valid_points) == 0:
-                            # print(f"Point {i} is at an edge, but no new valid points were found")
-                            continue
-
-                        closest_2_points_vert_sort = sorted([[new_valid_points[0], other_point_approx_contour_i], closest_2_points_vert_sort[1 - i]], key=lambda point: point[0][1])
-                        # print(f"Point {i} is at an edge, replacing with {new_valid_points[0]}")
-
-                split_line = [point[0] for point in closest_2_points_vert_sort]
-
-                contour_center_point_sides = [[], []] # Left, Right
-                for i, contour in enumerate(sorted_contours_horz):
-                    if split_line[1][0] == split_line[0][0]:  # Line is vertical, so x is constant
-                        side = "right" if contour[1][0] < split_line[0][0] else "left"
-                    else:
-                        slope = (split_line[1][1] - split_line[0][1]) / (split_line[1][0] - split_line[0][0])
-                        y_intercept = split_line[0][1] - slope * split_line[0][0]
-
-                        if contour[1][1] < slope * contour[1][0] + y_intercept:
-                            side = "left" if slope > 0 else "right"
-                        else:
-                            side = "right" if slope > 0 else "left"
-
-                    contour_center_point_sides[side == "left"].append(contour[1])
-
-                # Get the edges that the contour not relevant to the closest points touches
-                edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
-
-                # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
-                cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])
-
-                # If we are just entering a 3-way intersection, and the 'big contour' does not connect to the bottom,
-                # we may be entering a 4-way intersection... so follow the vertical line
-                if len(edges_big) >= 2 and "bottom" not in edges_big and "-en" in current_linefollowing_state:
-                    edges_a = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[0][1]], img0_binary.shape))
-                    edges_b = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[1][1]], img0_binary.shape))
-
-                    tight_bend = False
-                    if edges_a == ["bottom", "left", "top"] or edges_b == ["bottom", "left", "top"]:
-                        tight_bend = True
-                        cut_direction = 0
-                    if edges_a == ["bottom", "right", "top"] or edges_b == ["bottom", "right", "top"]:
-                        tight_bend = True
-                        cut_direction = 1
-
-                    if tight_bend:
-                        # Change the cut line to be a vertical line from the mid point
-                        # Avoids false positive issues a tight U bend leading to incorrect cutting
-                        split_line = [(mid_point[0], 0), (mid_point[0], img0.shape[0])]
-                    else:
-                        cut_direction = not cut_direction
-
-                # We are exiting a 4-way intersection, so follow the vertical line
-                elif current_linefollowing_state == "3-ng-4-ex":
-                    cut_direction = not cut_direction
+                # Make sure no white contour touches all sides of the screen
+                # If one does, this is not a 3-way intersection
+                valid_3wc = True
+                for contour in white_contours_filtered:
+                    edges = ck.getTouchingEdges(ck.simplifiedContourPoints(contour), img0_binary.shape)
+                    if len(edges) == 4:
+                        valid_3wc = False
+                        print("Invalid 3WC - Contour touches all sides")
+                        break
+                
+                if not valid_3wc:
+                    # Find all the black contours that still touch the bottom of the screen
+                    black_bottom_touching = []
+                    for black_contour in black_contours:
+                        black_rect = cv2.boundingRect(black_contour)
+                        if black_rect[1] + black_rect[3] >= img0_binary.shape[0] - 3:
+                            black_bottom_touching.append(black_contour)
+                    
+                    if len(black_bottom_touching) > 0:
+                        black_contours = black_bottom_touching
+                        print("Restricted black contours to only those touching the bottom of the screen")
                 else:
-                    # We have probably actually entered now, lets stop following the vert line and do the normal thing.
-                    current_linefollowing_state = "3-ng"
+                    intersection_state_debug = ["3-ng", time.time()]
+                    # Get the center of each contour
+                    white_contours_filtered_with_center = [(contour, ck.centerOfContour(contour)) for contour in white_contours_filtered]
 
-                    # If this is true, the line we want to follow is the smaller, perpendicular line to the large line.
-                    # This case should realistically never happen, but it's here just in case.
-                    if edges_big == ["bottom", "left", "right"] or edges_big == ["left", "right", "top"]:
+                    # Sort the contours from left to right - Based on the centre of the contour's horz val
+                    sorted_contours_horz = sorted(white_contours_filtered_with_center, key=lambda contour: contour[1][0])
+
+                    # Simplify the contours to get the corner points
+                    approx_contours = [ck.simplifiedContourPoints(contour[0], 0.03) for contour in sorted_contours_horz]
+
+                    # Middle of contour centres
+                    mid_point = (
+                        int(sum(contour[1][0] for contour in sorted_contours_horz) / len(sorted_contours_horz)),
+                        int(sum(contour[1][1] for contour in sorted_contours_horz) / len(sorted_contours_horz))
+                    )
+
+                    # Get the closest point of the approx contours to the mid point
+                    def closestPointToMidPoint(approx_contour, mid_point):
+                        return sorted(approx_contour, key=lambda point: ck.pointDistance(point, mid_point))[0]
+
+                    # Get the closest points of each approx contour to the mid point, and store the index of the contour to back reference later
+                    closest_points = [
+                        [closestPointToMidPoint(approx_contour, mid_point), i]
+                        for i, approx_contour in enumerate(approx_contours)
+                    ]
+
+                    # Get the closest points, sorted by distance to mid point
+                    sorted_closest_points = sorted(closest_points, key=lambda point: ck.pointDistance(point[0], mid_point))
+                    closest_2_points_vert_sort = sorted(sorted_closest_points[:2], key=lambda point: point[0][1])
+
+                    # If a point is touching the top/bottom of the screen, it is quite possibly invalid and will cause some issues with cutting
+                    # So, we will find the next best point, the point inside the other contour that is at the top of the screen, and is closest to the X value of the other point
+                    for i, point in enumerate(closest_2_points_vert_sort):
+                        if point[0][1] > img0_line_new.shape[0] - 10 or point[0][1] < 10:
+                            # Find the closest point to the x value of the other point
+                            other_point_x = closest_2_points_vert_sort[1 - i][0][0]
+                            other_point_approx_contour_i = closest_2_points_vert_sort[1 - i][1]
+
+                            closest_points_to_other_x = sorted(
+                                approx_contours[other_point_approx_contour_i],
+                                key=lambda point, x=other_point_x: abs(point[0] - x)
+                            )
+                            new_valid_points = [
+                                point for point in closest_points_to_other_x
+                                if not np.isin(point, [
+                                    closest_2_points_vert_sort[0][0],
+                                    closest_2_points_vert_sort[1][0]
+                                ]).any()
+                            ]
+                            if len(new_valid_points) == 0:
+                                # print(f"Point {i} is at an edge, but no new valid points were found")
+                                continue
+
+                            closest_2_points_vert_sort = sorted([[new_valid_points[0], other_point_approx_contour_i], closest_2_points_vert_sort[1 - i]], key=lambda point: point[0][1])
+                            # print(f"Point {i} is at an edge, replacing with {new_valid_points[0]}")
+
+                    split_line = [point[0] for point in closest_2_points_vert_sort]
+
+                    contour_center_point_sides = [[], []] # Left, Right
+                    for i, contour in enumerate(sorted_contours_horz):
+                        if split_line[1][0] == split_line[0][0]:  # Line is vertical, so x is constant
+                            side = "right" if contour[1][0] < split_line[0][0] else "left"
+                        else:
+                            slope = (split_line[1][1] - split_line[0][1]) / (split_line[1][0] - split_line[0][0])
+                            y_intercept = split_line[0][1] - slope * split_line[0][0]
+
+                            if contour[1][1] < slope * contour[1][0] + y_intercept:
+                                side = "left" if slope > 0 else "right"
+                            else:
+                                side = "right" if slope > 0 else "left"
+
+                        contour_center_point_sides[side == "left"].append(contour[1])
+
+                    # Get the edges that the contour not relevant to the closest points touches
+                    edges_big = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[2][1]], img0_binary.shape))
+
+                    # Cut direction is based on the side of the line with the most contour center points (contour_center_point_sides)
+                    cut_direction = len(contour_center_point_sides[0]) > len(contour_center_point_sides[1])
+
+                    # If we are just entering a 3-way intersection, and the 'big contour' does not connect to the bottom,
+                    # we may be entering a 4-way intersection... so follow the vertical line
+                    if len(edges_big) >= 2 and "bottom" not in edges_big and "-en" in current_linefollowing_state:
+                        edges_a = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[0][1]], img0_binary.shape))
+                        edges_b = sorted(ck.getTouchingEdges(approx_contours[sorted_closest_points[1][1]], img0_binary.shape))
+
+                        tight_bend = False
+                        if edges_a == ["bottom", "left", "top"] or edges_b == ["bottom", "left", "top"]:
+                            tight_bend = True
+                            cut_direction = 0
+                        if edges_a == ["bottom", "right", "top"] or edges_b == ["bottom", "right", "top"]:
+                            tight_bend = True
+                            cut_direction = 1
+
+                        if tight_bend:
+                            # Change the cut line to be a vertical line from the mid point
+                            # Avoids false positive issues a tight U bend leading to incorrect cutting
+                            split_line = [(mid_point[0], 0), (mid_point[0], img0.shape[0])]
+                        else:
+                            cut_direction = not cut_direction
+
+                    # We are exiting a 4-way intersection, so follow the vertical line
+                    elif current_linefollowing_state == "3-ng-4-ex":
                         cut_direction = not cut_direction
-                    # If the contour not relevant to the closest points is really small (area), we are probably just entering the intersection,
-                    # So we need to follow the line that is perpendicular to the large line
-                    # We ignore this if edges_big does not include the bottom, because we could accidently have the wrong contour in some weird angle
-                    elif cv2.contourArea(sorted_contours_horz[sorted_closest_points[2][1]][0]) < 7000 and "bottom" in edges_big:
-                        cut_direction = not cut_direction
+                    else:
+                        # We have probably actually entered now, lets stop following the vert line and do the normal thing.
+                        current_linefollowing_state = "3-ng"
 
-                # CutMaskWithLine will fail if the line is flat, so we need to make sure that the line is not flat
-                if split_line[0][1] == split_line[1][1]:
-                    split_line[0][1] += 1 # Move the first point up by 1 pixel
+                        # If this is true, the line we want to follow is the smaller, perpendicular line to the large line.
+                        # This case should realistically never happen, but it's here just in case.
+                        if edges_big == ["bottom", "left", "right"] or edges_big == ["left", "right", "top"]:
+                            cut_direction = not cut_direction
+                        # If the contour not relevant to the closest points is really small (area), we are probably just entering the intersection,
+                        # So we need to follow the line that is perpendicular to the large line
+                        # We ignore this if edges_big does not include the bottom, because we could accidently have the wrong contour in some weird angle
+                        elif cv2.contourArea(sorted_contours_horz[sorted_closest_points[2][1]][0]) < 7000 and "bottom" in edges_big:
+                            cut_direction = not cut_direction
 
-                img0_line_new = intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
-                img0_line_new = intersections.CutMaskWithLine(split_line[0], split_line[1], img0_line_new, "left" if cut_direction else "right")
-                changed_black_contour = cv2.bitwise_not(img0_line_new)
+                    # CutMaskWithLine will fail if the line is flat, so we need to make sure that the line is not flat
+                    if split_line[0][1] == split_line[1][1]:
+                        split_line[0][1] += 1 # Move the first point up by 1 pixel
+
+                    img0_line_new = intersections.CutMaskWithLine(closest_2_points_vert_sort[0][0], closest_2_points_vert_sort[1][0], img0_line_new, "left" if cut_direction else "right")
+                    img0_line_new = intersections.CutMaskWithLine(split_line[0], split_line[1], img0_line_new, "left" if cut_direction else "right")
+                    changed_black_contour = cv2.bitwise_not(img0_line_new)
 
             elif len(white_contours_filtered) == 4:
                 intersection_state_debug = ["4-ng", time.time()]
