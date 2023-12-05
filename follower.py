@@ -47,12 +47,12 @@ error_weight = 0.5                  # Weight of the error value when calculating
 angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
 black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
 
-KP = 2.2                            # Proportional gain
+KP = 1.2                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.1                            # Derivative gain
 
-follower_speed = 40                 # Base speed of the line follower
-obstacle_threshold = 50             # Minimum distance threshold for obstacles (mm)
+follower_speed = 37                 # Base speed of the line follower
+obstacle_threshold = 60             # Minimum distance threshold for obstacles (mm)
 
 evac_cam_angle = 7                  # Angle of the camera when evacuating
 
