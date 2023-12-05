@@ -435,7 +435,7 @@ def run_evac():
     print("EVAC: Waiting for first inference of models...")
     frame_processed = cam.read_stream_processed()
     img0_raw = frame_processed["raw"].copy()
-    img0_resized_evac = cv2.resize(img0, (160, 120))
+    img0_resized_evac = cv2.resize(img0_raw, (160, 120))
 
     evac_start = time.time()
     model_victims(img0_resized_evac, task="detect")
@@ -463,6 +463,7 @@ def run_evac():
             print(f"Evac Mode: {rescue_mode} | Evac FPS: {fpsEvac} | Camera FPS: {cam.get_fps()} | Sleep time: {int(program_sleep_time*1000)}")
 
         frame_processed = cam.read_stream_processed()
+        img0 = frame_processed["resized"]
         img0_raw = frame_processed["raw"]
         img0_resized_evac = cv2.resize(img0_raw, (160, 120))
 
@@ -641,7 +642,9 @@ def run_evac():
             if v_target is not None:
                 if victim_check_counter >= 3:
                     cv2.putText(img0_raw, "COLLECTING", (10, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    cv2.imshow("img0_raw", img0_raw)
+
+                    img0_raw_scaled = cv2.resize(img0_raw, (img0.shape[1], int(img0.shape[1] * (img0_raw.shape[0] / img0_raw.shape[1]))))
+                    cv2.imshow("img0_raw", img0_raw_scaled)
 
                     k = cv2.waitKey(1)
                     if k & 0xFF == ord('q'):
@@ -669,8 +672,14 @@ def run_evac():
                         servo.cam.to(80)
                         time.sleep(1)
                     
-                    if v_target[0] == 0 or victim_capture_qty == 3: # If we've grabbed a black ball, hold onto it and end victim search
+                    if v_target[0] == 1 and victim_capture_qty > 2:
+                        # There are only 2 silver balls, so we must have missed one earlier if we now have >2
+                        victim_capture_qty = 2
+
+                    if v_target[0] == 0 or victim_capture_qty == 3:
+                        # If we've grabbed a black ball, hold onto it and end victim search
                         victim_check_counter = 0
+                        victim_capture_qty = max(3, victim_capture_qty)
                         rescue_mode = "corner_green"
                     continue
                 elif victim_check_counter > 0:
@@ -720,7 +729,8 @@ def run_evac():
             cv2.putText(img0_raw, f"{victim_capture_qty}/3", (img0_raw.shape[1] - 200, img0_raw.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
             if debug_state("rescue"):
-                cv2.imshow("img0_raw", img0_raw)
+                img0_raw_scaled = cv2.resize(img0_raw, (img0.shape[1], int(img0.shape[1] * (img0_raw.shape[0] / img0_raw.shape[1]))))
+                cv2.imshow("img0_raw", img0_raw_scaled)
 
                 k = cv2.waitKey(1)
                 if k & 0xFF == ord('q'):
@@ -875,7 +885,7 @@ def run_evac():
                     time.sleep(1)
                     
                     corner_check_counter = 0
-                    if rescue_mode == "corner_green":
+                    if rescue_mode == "corner_green" and victim_capture_qty >= 3:
                         rescue_mode = "corner_red"
                     else:
                         rescue_mode = "exit"
