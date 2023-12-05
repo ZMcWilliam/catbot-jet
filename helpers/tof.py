@@ -1,6 +1,7 @@
 import threading
 import time
 import board
+import traceback
 import busio
 import adafruit_vl53l1x
 
@@ -18,12 +19,16 @@ class RangeSensorMonitor(threading.Thread):
     def run(self):
         self.sensor.start_ranging()
         while not self._stop_event.is_set():
-            if self.sensor.data_ready:
-                new_dist = self.sensor.distance
-                if new_dist is not None:
-                    self.range_mm = new_dist * 10
-                self.sensor.clear_interrupt()
-                self.frames += 1
+            try:
+                if self.sensor.data_ready:
+                    new_dist = self.sensor.distance
+                    if new_dist is not None:
+                        self.range_mm = new_dist * 10
+                    self.sensor.clear_interrupt()
+                    self.frames += 1
+            except Exception as e:
+                print(f"Error in RangeSensorMonitor: {e}")
+                traceback.print_exc()
         self.sensor.stop_ranging()
 
     def stop(self):

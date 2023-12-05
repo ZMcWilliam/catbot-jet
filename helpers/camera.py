@@ -104,7 +104,9 @@ class CameraStream:
             if self.processing_conf is not None:
                 self.process_image()
 
-        self.cam.release()
+        if self.cam is not None:
+            self.cam.release()
+            self.cam = None
 
     def resize_image(self, img, target_w=290, target_h=264, offset_x=-2, offset_y=104):
         start_x = (img.shape[1] // 2 - target_w // 2) + offset_x
@@ -232,12 +234,23 @@ class CameraStream:
     def stop(self):
         print(f"[CAMERA] C{self.num} Stopping stream")
         self.stream_running = False
+        
+        # Explicitly set the GStreamer elements to the NULL state
+        if self.cam is not None:
+            self.cam.release()
+            self.cam = None
 
         # if self.capture_thread is not None:
         #     self.capture_thread.join()
 
+    def atexit(self):
+        print(f"\n[CAMERA] C{self.num} Atexit called. Stopping stream...")
+        time.sleep(1)
+        self.stop()
+
     def signal_handler(self, signum, frame):
         print(f"\n[CAMERA] C{self.num} Signal received: {signum}. Initiating graceful shutdown...")
+        time.sleep(1)
         self.stop()
         print(f"\n[CAMERA] C{self.num} Stream stopped. Exiting...")
 
