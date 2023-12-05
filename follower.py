@@ -67,6 +67,7 @@ program_sleep_time = 0.001
 current_steering = 0
 current_time = time.time()
 last_line_pos = np.array([100, 100])
+last_break_in_line = time.time() - 60
 
 turning = None
 last_green_time = 0
@@ -1084,7 +1085,28 @@ while program_active:
         img0_line_not = cv2.bitwise_not(img0_line)
         black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         if len(black_contours) == 0:
-            print("No black contours found")
+            is_broken = False
+            new_steer = current_steering
+            if time.time() - last_break_in_line < 3:
+                new_steer = 0
+
+                is_broken = True
+                cv2.putText(img0, "BROKEN LINE", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+            elif new_steer < -50: new_steer = -100
+            elif new_steer > 50: new_steer = 100
+
+            m.run_steer(follower_speed, 100, new_steer)
+
+            cv2.putText(img0, f"Steer: {int(new_steer)}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+            if debug_state():
+                cv2.imshow("img0_nbc", img0)
+                k = cv2.waitKey(1)
+                if k & 0xFF == ord('q'):
+                    program_active = False
+                    break
+                
+            print(f"No black contours found | {int(time.time() - last_break_in_line)} | Steer: {new_steer:.2f}" + (" | BROKEN" if is_broken else ""))
             continue
 
         # -----------
@@ -1236,8 +1258,37 @@ while program_active:
         if not turning:
             # Filter white contours to have a minimum area before we accept them
             white_contours_filtered = [contour for contour in white_contours if cv2.contourArea(contour) > 500]
+            
+            # Check for a break in the line
+            # This only occurs when:
+            # - There is exactly 1 black and 1 white contour
+            # - The previous steering is within [-20, 20]
+            # - The black contour touches the bottom of the image
+            # - The black contour does not touch the top of the image by at least 30%
+            # - The black contour is at least 20% away from the sides of the image
+            if len(white_contours_filtered) == 1:
+                black_rect = cv2.boundingRect(black_contours[0])
 
-            if len(white_contours_filtered) == 2:
+                # Draw rect
+                cv2.rectangle(img0, (black_rect[0], black_rect[1]), (black_rect[0] + black_rect[2], black_rect[1] + black_rect[3]), (0, 0, 255), 2)
+                A = "A" if -30 < current_steering < 30 else "-"
+                B = "B" if black_rect[1] + black_rect[3] > img0_binary.shape[0] - 5 else "-"
+                C = "C" if black_rect[1] > img0_binary.shape[0] * 0.3 else "-"
+                D = "D" if black_rect[0] > img0_binary.shape[1] * 0.2 else "-"
+                E = "E" if black_rect[0] + black_rect[2] < img0_binary.shape[1] * (1 - 0.2) else "-"
+
+                cv2.putText(img0, f"{A} {B} {C} {D} {E}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+                if (
+                    len(black_contours) == 1
+                    and -30 < current_steering < 30 
+                    and black_rect[1] + black_rect[3] > img0_binary.shape[0] - 5
+                    and black_rect[1] > img0_binary.shape[0] * 0.3
+                    and black_rect[0] > img0_binary.shape[1] * 0.2
+                    and black_rect[0] + black_rect[2] < img0_binary.shape[1] * (1 - 0.2)
+                ):
+                    last_break_in_line = time.time()
+
+            elif len(white_contours_filtered) == 2:
                 contour_L = white_contours_filtered[0]
                 contour_R = white_contours_filtered[1]
 
@@ -1515,36 +1566,28 @@ while program_active:
             time.sleep(0.2)
             continue
         elif len(sorted_black_contours) == 0:
-            print("No black contours after sorting")
-
-            # This is a botchy temp fix so that sometimes we can handle the case where we lose the line,
-            # and other times we can handle gaps in the line
-            # TODO: Remove this, and implement a proper line following fix
-            # if not no_black_contours:
-            #     no_black_contours_mode = "straight" if no_black_contours_mode == "steer" else "steer"
-            #     no_black_contours = True
-
-            # We've lost any black contour, so it's possible we have encountered a gap in the line
-            # Hence, go straight.
-            #
-            # Optimally, this should figure out if the line lost was in the centre and hence we haven't just fallen off the line.
-            # Going forward, instead of using current_steering, means if we fall off the line, we have little hope of getting back on...
-            # new_steer = current_steering if no_black_contours_mode == "steer" else 0
-
-            # TODO: Check if touches sides of screen instead (maybe? idk)
+            is_broken = False
             new_steer = current_steering
-            if -40 < new_steer and new_steer < 40:
+            if time.time() - last_break_in_line < 3:
                 new_steer = 0
+
+                is_broken = True
+                cv2.putText(img0, "BROKEN LINE", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+
+            elif new_steer < -50: new_steer = -100
+            elif new_steer > 50: new_steer = 100
+
             m.run_steer(follower_speed, 100, new_steer)
 
-            preview_image_img0 = cv2.resize(img0, (0, 0), fx=0.8, fy=0.7)
-
+            cv2.putText(img0, f"Steer: {int(new_steer)}", (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
             if debug_state():
                 cv2.imshow("img0_nbc", img0)
                 k = cv2.waitKey(1)
                 if k & 0xFF == ord('q'):
                     program_active = False
                     break
+                
+            print(f"No black contours found (SORT) | {int(time.time() - last_break_in_line)} | Steer: {new_steer:.2f}" + (" | BROKEN" if is_broken else ""))
             continue
 
         no_black_contours = False
