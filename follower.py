@@ -8,6 +8,7 @@
 # RoboCup Junior Rescue Line 2023 - Asia Pacific (South Korea)
 # https://github.com/zmcwilliam/catbot-rcjap
 
+print("Starting CatBot")
 import time
 import os
 import sys
@@ -19,7 +20,7 @@ import cv2
 import busio
 import numpy as np
 import tensorflow as tf
-from ultralytics import YOLO
+from colorama import init, Fore, Style
 
 from helpers import camera as c
 from helpers import camerakit as ck
@@ -29,6 +30,11 @@ from helpers import config
 from helpers.servokit import ServoManager
 from helpers.cmps14 import CMPS14
 from helpers.tof import RangeSensorMonitor
+
+init()
+m.stop_all()
+os.system("cat motd.txt")
+print(Fore.CYAN + "Loaded Modules" + Style.RESET_ALL)
 
 DEBUGGER = True # Should the debug switch actually work? This should be set to false if using the runner
 
@@ -89,9 +95,6 @@ no_black_contours = False
 # --------------
 # LOAD ML MODELS
 # --------------
-model_victims = YOLO("ml/model/victims.pt")
-model_corners = YOLO("ml/model/corners.pt")
-
 model_silver = tf.saved_model.load("ml/model/silver-trt")
 infer_func_silver = model_silver.signatures["serving_default"]
 
@@ -149,20 +152,22 @@ def exit_gracefully(signum=None, frame=None) -> None:
         signum (int, optional): Signal number. Defaults to None.
         frame (frame, optional): Current stack frame. Defaults to None.
     """
+    global program_active
     global has_attempted_exit
     if has_attempted_exit:
         # We already tried to exit, but may have gotten stuck. Force the exit.
         print("\nForcefully Exiting")
         sys.exit()
 
-    print("\n\nExiting Gracefully\n")
+    print("\n\nExiting Gracefully...\n")
     has_attempted_exit = True
     program_active = False
-    m.stop_all()
-    cam.stop()
     tof.stop()
+    cam.stop()
     tof.join()
+    m.stop_all()
     cv2.destroyAllWindows()
+    print(Fore.GREEN + "SAFE TO EXIT" + Style.RESET_ALL)
     sys.exit()
 
 signal.signal(signal.SIGINT, exit_gracefully)
@@ -419,6 +424,12 @@ def run_evac():
     corner_check_counter = 0
 
     m.stop_all()
+    
+    print("EVAC: Loading Models...", end="")
+    from ultralytics import YOLO # Yolo takes a few seconds to load, so do it here to avoid every program load being slow
+    model_victims = YOLO("ml/model/victims.pt")
+    model_corners = YOLO("ml/model/corners.pt")
+    print(f"Done. Took {int((time.time() - fpsTimeEvac) * 1000)}ms")
 
     print("EVAC: Waiting for first inference of models...")
     frame_processed = cam.read_stream_processed()
@@ -953,14 +964,6 @@ start_inf = time.time()
 infer_silver(cam.read_stream_processed()["gray"])
 inference_time_ms = (time.time() - start_inf) * 1000
 print(f"Initial Silver Inference: {inference_time_ms:.2f} ms")
-
-for i in range(3, 0, -1):
-    print(f"Starting in {i}...", end="\r")
-    time.sleep(1)
-
-# Clear the countdown line
-print("\033[K")
-print()
 
 # ---------
 # MAIN LOOP
