@@ -19,6 +19,7 @@ time.sleep(1)
 calibration_data = {
     "calibration_value_w": 0,
     "calibration_map_w": [],
+    "calibration_map_w_obst": [],
 }
 
 try:
@@ -44,26 +45,33 @@ while True:
         img0_gray = cv2.cvtColor(img0_resized, cv2.COLOR_BGR2GRAY)
         img0_gray = cv2.GaussianBlur(img0_gray, (5, 5), 0)
 
+        img0_resized_obst = cam.resize_image_obstacle(img0)
+        img0_gray_obst = cv2.cvtColor(img0_resized_obst, cv2.COLOR_BGR2GRAY)
+        img0_gray_obst = cv2.GaussianBlur(img0_gray_obst, (5, 5), 0)
+
         calibration_images[requested].append(img0_gray)
+        calibration_images[requested + "_obst"] = img0_gray_obst
         print(f"Calibration image {len(calibration_images[requested])} of {NUM_CALIBRATION_IMAGES} captured.")
 
         time.sleep(0.01)
-        cv2.imshow("Calibration Image", img0_gray)
+        cv2.imshow("img0_gray", img0_gray)
+        cv2.imshow("img0_gray_obst", img0_gray_obst)
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):
             break
 
-    # Calculate the average grayscale value across all calibration images
-    calibration_data["calibration_value_" + requested] = np.mean([np.mean(img_gray) for img_gray in calibration_images[requested]])
-    # Create an empty calibration map
-    calibration_map = np.zeros_like(calibration_images[requested][0], dtype=np.float32)
-    # Calculate the calibration map
-    for img_gray in calibration_images[requested]:
-        calibration_map += img_gray
+    for suffix in ["", "_obst"]:
+        # Calculate the average grayscale value across all calibration images
+        calibration_data["calibration_value_" + requested + suffix] = np.mean([np.mean(img_gray) for img_gray in calibration_images[requested]])
+        # Create an empty calibration map
+        calibration_map = np.zeros_like(calibration_images[requested + suffix][0], dtype=np.float32)
+        # Calculate the calibration map
+        for img_gray in calibration_images[requested + suffix]:
+            calibration_map += img_gray
 
-    calibration_map //= len(calibration_images[requested])
+        calibration_map //= len(calibration_images[requested + suffix])
 
-    calibration_data["calibration_map_" + requested] = calibration_map.tolist()
+        calibration_data["calibration_map_" + requested + suffix] = calibration_map.tolist()
 
     # Save the calibration map to the JSON file
     with open("calibration.json", "w", encoding="utf-8") as json_file:

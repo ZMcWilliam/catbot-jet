@@ -5,12 +5,22 @@
             "img0",
             "img0_gray_scaled",
             "img0_binary",
-            "img0_line"
+            "img0_line",
+            "img0_binary_obstacle"
         ],
         "configs": {
             "black_line_threshold": {
                 "title": "Blk Tresh Line",
                 "description": "Value used to get a binary image of the line",
+                "range": [0, 255],
+                "type": "int",
+                "data": {
+                    "val": 180
+                }
+            },
+            "obstacle_line_threshold": {
+                "title": "Obs Tresh Line",
+                "description": "Value used to get a binary image of the line before avoiding an obstacle",
                 "range": [0, 255],
                 "type": "int",
                 "data": {

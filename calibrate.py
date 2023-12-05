@@ -8,6 +8,7 @@ from helpers import camera as c
 with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
+calibration_map_obst = 255 / np.array(calibration_data["calibration_map_w_obst"])
 
 with open("config.json", "r", encoding="utf-8") as json_file:
     config_data = json.load(json_file)
@@ -59,21 +60,25 @@ def btn_callback(event, x, y, flags, param):
                 print("Selected tab is now: " + selected_tab)
                 show_selected_tab(tab_id)
 
+has_moved_windows = False
+
 def show_selected_tab(tab_id):
+    global has_moved_windows
     global selected_tab
     global btn_img
     global cam
 
     selected_tab = tab_id
 
-    cv2.destroyAllWindows()
-    btn_img = np.zeros((btn_height, gui_width, 3), dtype=np.uint8)
-
+    # cv2.destroyAllWindows()
+    cv2.destroyWindow("Config")
     cv2.namedWindow("Config")
+    cv2.setMouseCallback("Config", btn_callback)
+    cv2.moveWindow("Config", 100, 50)
+    btn_img = np.zeros((btn_height, gui_width, 3), dtype=np.uint8)
 
     draw_btns()
     cv2.imshow("Config", btn_img)
-    cv2.setMouseCallback("Config", btn_callback)
 
     def create_callback(i_selected_tab, i_conf_id, i_data_id):
         def trackbar_callback(x):
@@ -111,7 +116,9 @@ def show_selected_tab(tab_id):
     while True:
         config_values = {
             "calibration_map": calibration_map,
+            "calibration_map_obst": calibration_map_obst,
             "black_line_threshold": config_data["main"]["configs"]["black_line_threshold"]["data"]["val"],
+            "obstacle_line_threshold": config_data["main"]["configs"]["obstacle_line_threshold"]["data"]["val"],
             "green_turn_hsv_threshold": [np.array(bound) for bound in [
                 [
                     config_data["green"]["configs"]["green_turn_hsv_threshold"]["data"]["L-H"],
@@ -157,8 +164,9 @@ def show_selected_tab(tab_id):
             print("Waiting for image...")
             time.sleep(0.5)
             continue
-
+        
         img0 = frame_processed["resized"].copy()
+        img0_raw = frame_processed["raw"].copy()
         img0_clean = img0.copy() # Used for displaying the image without any overlays
 
         img0_gray = frame_processed["gray"].copy()
@@ -168,11 +176,21 @@ def show_selected_tab(tab_id):
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
 
-        print(config_values["red_hsv_threshold"])
+
+        img0_resized_obst = cam.resize_image_obstacle(img0_raw)
+        img0_gray_obst = cv2.cvtColor(img0_resized_obst, cv2.COLOR_BGR2GRAY)
+        img0_gray_obst = cv2.GaussianBlur(img0_gray_obst, (5, 5), 0)
+        img0_gray_obst_scaled = img0_gray_obst * calibration_map_obst
+
+        img0_binary_obstacle = ((img0_gray_obst_scaled > config_values["obstacle_line_threshold"]) * 255).astype(np.uint8)
+        img0_binary_obstacle = cv2.morphologyEx(img0_binary_obstacle, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+
         img0_red = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1]))
         img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
-        for req_img in config_data[selected_tab]["images"]:
+        images = ["img0", "img0_gray_scaled", "img0_binary", "img0_line", "img0_hsv", "img0_green", "img0_red", "img0_gray_obst_scaled", "img0_binary_obstacle"]
+        # for req_img in config_data[selected_tab]["images"]:
+        for req_img in images:
             img0_preview = None
 
             if req_img == "img0": img0_preview = img0
@@ -182,7 +200,8 @@ def show_selected_tab(tab_id):
             elif req_img == "img0_hsv": img0_preview = img0_hsv
             elif req_img == "img0_green": img0_preview = img0_green
             elif req_img == "img0_red": img0_preview = img0_red
-            elif req_img == "img0_line": img0_preview = img0_line
+            elif req_img == "img0_gray_obst_scaled": img0_preview = img0_gray_obst_scaled
+            elif req_img == "img0_binary_obstacle": img0_preview = img0_binary_obstacle
 
             img0_preview = cv2.resize(img0_preview, (0, 0), fx=0.8, fy=0.7)
 
@@ -191,6 +210,28 @@ def show_selected_tab(tab_id):
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):
             break
+
+        if not has_moved_windows:
+            has_moved_windows = True
+            # for req_img in config_data[selected_tab]["images"]:
+            for req_img in images:
+                loc_target = None
+
+                base_left = 550
+                base_top = 50
+                x_split = 250
+                y_split = 250
+                if req_img == "img0": loc_target = [base_left + (x_split * 0), base_top + (y_split * 0)]
+                elif req_img == "img0_gray_scaled": loc_target = [base_left + (x_split * 1), base_top + (y_split * 0)]
+                elif req_img == "img0_binary": loc_target = [base_left + (x_split * 2), base_top + (y_split * 0)]
+                elif req_img == "img0_line": loc_target = [base_left + (x_split * 3), base_top + (y_split * 0)]
+                elif req_img == "img0_hsv": loc_target = [base_left + (x_split * 0), base_top + (y_split * 1)]
+                elif req_img == "img0_green": loc_target = [base_left + (x_split * 1), base_top + (y_split * 1)]
+                elif req_img == "img0_red": loc_target = [base_left + (x_split * 2), base_top + (y_split * 1)]
+                elif req_img == "img0_gray_obst_scaled": loc_target = [base_left + (x_split * 0), base_top + (y_split * 2)]
+                elif req_img == "img0_binary_obstacle": loc_target = [base_left + (x_split * 2), base_top + (y_split * 2)]
+
+                cv2.moveWindow(req_img, loc_target[0], loc_target[1])
 
 show_selected_tab(selected_tab)
 cv2.destroyAllWindows()
