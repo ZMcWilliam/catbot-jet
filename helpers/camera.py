@@ -114,6 +114,14 @@ class CameraStream:
         resized = img[start_y:start_y + target_h, start_x:start_x + target_w]
 
         return resized
+    
+    def resize_image_obstacle(self, img, target_w=525, target_h=200, offset_x=-2, offset_y=65):
+        start_x = (img.shape[1] // 2 - target_w // 2) + offset_x
+        start_y = 0 + offset_y
+
+        resized = img[start_y:start_y + target_h, start_x:start_x + target_w]
+
+        return resized
 
     def process_image(self):
         image = self.img
