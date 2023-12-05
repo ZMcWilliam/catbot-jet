@@ -1179,6 +1179,17 @@ while program_active:
                     if time.time() - initial_green_time < 1: initial_green_time = time.time() # Reset the initial green time
                     if time.time() - initial_green_time < 0.3: can_follow_green = False
 
+                    # As an additional check, make sure that a black contour touches the side of the screen before starting a turn
+                    # This helps the above condition to make sure we don't miss double green
+                    black_touches_side = False
+                    for black_rect in [cv2.boundingRect(c) for c in black_contours if cv2.contourArea(c) > 3000]:
+                        if black_rect[0] < 3 or black_rect[0] + black_rect[2] > img0_binary.shape[1] - 3:
+                            black_touches_side = True
+                            break
+
+                    if not black_touches_side:
+                        can_follow_green = False 
+
                 if can_follow_green:
                     selected = followable_green[0]
                     # Dilate selected["w"] to make it larger, and then use it as a mask
