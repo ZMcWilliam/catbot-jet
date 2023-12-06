@@ -927,10 +927,10 @@ def run_evac():
                     if k & 0xFF == ord('q'):
                         program_active = False
                         break
-                    
-                    m.stop_all()
+
+                    m.run_tank_front(15, 15)
+                    m.run_tank_back(35, 35)
                     time.sleep(2)
-                    m.run_tank_for_time(30, 30, 3000)
 
                     m.run_tank_for_time(-40, -40, 1400)
                     time.sleep(0.1)
@@ -942,13 +942,12 @@ def run_evac():
                         servo.claw.toMax() # Release the held black ball
                     servo.gate.toMax()
                     time.sleep(0.5)
-                    for i in range(12):
+                    for i in range(6):
                         m.run_tank_for_time(100, 100, 150)
                         m.run_tank_for_time(-100, -100, 250)
                     servo.gate.toMin()
                     servo.claw.toMin()
                     m.run_tank_for_time(35, 35, 1000)
-                    time.sleep(1)
                     
                     corner_check_counter = 0
                     if rescue_mode == "corner_green" and victim_capture_qty >= 3:
@@ -1074,6 +1073,8 @@ while program_active:
 
         if frames % 30 == 0 and frames != 0:
             print(f"{frames:4d} {fpsLoop:3.0f} {fpsCamera:2.0f}")
+
+        servo.cam.toMin()
 
         # ------------------
         # OBSTACLE AVOIDANCE
