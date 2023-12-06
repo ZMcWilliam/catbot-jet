@@ -71,7 +71,6 @@ current_time = time.time()
 current_follower_bearing = 0
 last_line_pos = np.array([100, 100])
 last_break_in_line = time.time() - 60
-last_significant_bearing_change = time.time() + 5
 
 turning = None
 last_green_time = 0
@@ -1851,28 +1850,7 @@ while program_active:
             time_since_ramp_start = 0
             if time.time() < time_ramp_end:
                 print("END RAMP")
-                last_significant_bearing_change = time.time()
                 motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
-            else:
-                new_bearing = cmps.read_bearing_16bit()
-                new_bearing = 0
-
-                if current_follower_bearing is None:
-                    last_significant_bearing_change = time.time()
-                    current_follower_bearing = new_bearing
-
-                bearing_diff = abs(new_bearing - current_follower_bearing)
-                if frames % 7 == 0: current_follower_bearing = new_bearing
-
-                # Check if the absolute difference is within the specified range or if it wraps around 360
-                bearing_min_err = 6
-                if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
-                    print("SAME BEARING FOR 10 SECONDS")
-                    m.run_tank_for_time(100, 100, 400)
-                    motor_vals = [100, 100]
-                    last_significant_bearing_change = time.time()
-                elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
-                    last_significant_bearing_change = time.time()
 
         if motor_vals is None:
             motor_vals = m.run_steer(follower_speed, 100, current_steering)
