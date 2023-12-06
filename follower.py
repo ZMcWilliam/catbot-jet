@@ -146,6 +146,9 @@ cmps = CMPS14(7, 0x61)
 tof = RangeSensorMonitor()
 tof.start()
 
+# -----------------
+# VARIOUS FUNCTIONS
+# -----------------
 def exit_gracefully(signum=None, frame=None) -> None:
     """
     Handles program exit gracefully. Called by SIGINT signal.
@@ -165,10 +168,10 @@ def exit_gracefully(signum=None, frame=None) -> None:
     has_attempted_exit = True
     program_active = False
     tof.stop()
+    cv2.destroyAllWindows()
     cam.stop()
     tof.join()
     m.stop_all()
-    cv2.destroyAllWindows()
     print(Fore.GREEN + "SAFE TO EXIT" + Style.RESET_ALL)
     sys.exit()
 
