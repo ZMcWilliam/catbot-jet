@@ -1123,7 +1123,7 @@ while program_active:
 
         current_pitch = cmps.read_pitch()
 
-        if current_pitch > min_pitch_ramp_up_slight:
+        if min_pitch_ramp_up_slight < current_pitch < min_pitch_ramp_up_full + 20:
             img0_binary[0:int(img0_binary.shape[0] * 0.4), :] = 255
             img0_line[0:int(img0_line.shape[0] * 0.4), :] = 255
 
@@ -1834,7 +1834,7 @@ while program_active:
 
         motor_vals = None
 
-        if current_pitch > min_pitch_ramp_up_slight:
+        if min_pitch_ramp_up_slight < current_pitch < min_pitch_ramp_up_full + 20:
             if time_since_ramp_start == 0:
                 time_since_ramp_start = time.time()
             print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
