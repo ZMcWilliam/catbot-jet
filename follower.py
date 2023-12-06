@@ -467,6 +467,7 @@ def run_evac():
     victim_capture_qty = 0
     victim_check_counter = 0
     corner_check_counter = 0
+    current_victim_start = time.time()
 
     m.stop_all()
     
@@ -564,6 +565,8 @@ def run_evac():
             target_bearing = lowest_dist[1]
             align_to_bearing(target_bearing, 2, 10, "ROTATE: ")
 
+            if tof.range_mm > 1000:
+                align_to_bearing(target_bearing + 90, 2, 10, "ROTATE: ")
             run_to_dist(400, 5, 40, 25, 5000, False)
 
             print("Done. Finding Victims...")
@@ -576,6 +579,7 @@ def run_evac():
 
             rescue_mode = "victim"
             fpsTimeEvac = time.time()
+            current_victim_start = time.time()
             framesEvac = 0
             continue
 
@@ -647,6 +651,9 @@ def run_evac():
                 
                 # If a victim is within these limits (horz/vert distance offsets), we can approach it
                 approach_range = [[-85, 85], [-100, 0]]
+                if time.time() - current_victim_start > 8:
+                    print("EXPANDING APPROACH RANGE")
+                    approach_range = [[-85, 85], [-200, 0]]
 
                 v_can_approach = approach_range[0][0] < v_target[4][0] < approach_range[0][1] and approach_range[1][0] < v_target[4][1] < approach_range[1][1]
                     
@@ -678,6 +685,7 @@ def run_evac():
 
                 cv2.putText(img0_raw, f"{len(found_victims)} FOUND", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
             else:
+                current_victim_start = time.time()
                 victim_check_counter = 0
                 cv2.putText(img0_raw, "NONE", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
 
@@ -703,7 +711,15 @@ def run_evac():
                     # 3 valid approach signals in a row, stop and grab
                     victim_capture_qty += 1
 
-                    m.run_tank(30, 30)
+                    if time.time() - current_victim_start > 8:
+                        m.run_tank_for_time(-30, 30, 200)
+                        servo.claw.to(50)
+                        m.run_tank(40, 40)
+                        for i in range(30):
+                            servo.claw.to(50 - i)
+                            time.sleep(0.05)
+                    else:
+                        m.run_tank(30, 30)
                     time.sleep(0.2)
                     servo.claw.toMin()
                     time.sleep(0.6)
@@ -720,6 +736,7 @@ def run_evac():
                         servo.lift.toMax()
                         servo.cam.to(80)
                         time.sleep(1)
+                        current_victim_start = time.time()
                     
                     if v_target[0] == 1 and victim_capture_qty > 2:
                         # There are only 2 silver balls, so we must have missed one earlier if we now have >2
