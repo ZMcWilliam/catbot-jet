@@ -54,7 +54,9 @@ KD = 0.1                            # Derivative gain
 follower_speed = 37                 # Base speed of the line follower
 obstacle_threshold = 60             # Minimum distance threshold for obstacles (mm)
 
-evac_cam_angle = 7                  # Angle of the camera when evacuating
+pitch_flat = 7
+min_pitch_ramp_up_slight = 20
+min_pitch_ramp_up_full = 30
 
 # ----------------
 # SYSTEM VARIABLES
@@ -66,8 +68,10 @@ program_sleep_time = 0.001
 
 current_steering = 0
 current_time = time.time()
+current_follower_bearing = 0
 last_line_pos = np.array([100, 100])
 last_break_in_line = time.time() - 60
+last_significant_bearing_change = time.time() + 5
 
 turning = None
 last_green_time = 0
@@ -1116,6 +1120,13 @@ while program_active:
 
         img0_line_not = cv2.bitwise_not(img0_line)
 
+
+        current_pitch = cmps.read_pitch()
+
+        if current_pitch > min_pitch_ramp_up_slight:
+            img0_binary[0:int(img0_binary.shape[0] * 0.4), :] = 255
+            img0_line[0:int(img0_line.shape[0] * 0.4), :] = 255
+
         raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -1821,48 +1832,50 @@ while program_active:
         pid_last_error = error
         current_time = time.time()
 
-        # current_pitch = cmps.read_pitch()
+        motor_vals = None
 
-        # if current_pitch > 180 and current_pitch < 240:
-        #     if time_since_ramp_start == 0:
-        #         time_since_ramp_start = time.time()
-        #     print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
-        #     if time.time() - time_since_ramp_start > 18:
-        #         motor_vals = m.run_steer(100, 100, 0)
-        #     if time.time() - time_since_ramp_start > 10:
-        #         motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
-        #     else:
-        #         motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
-        # else:
-        #     if time_since_ramp_start > 3:
-        #         time_ramp_end = time.time() + 2
+        if current_pitch > min_pitch_ramp_up_slight:
+            if time_since_ramp_start == 0:
+                time_since_ramp_start = time.time()
+            print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
+            if time.time() - time_since_ramp_start > 15:
+                motor_vals = m.run_tank(100, 100)
+            elif time.time() - time_since_ramp_start > 10:
+                motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
+            else:
+                motor_vals = m.run_steer(follower_speed, 70, current_steering, ramp=True)
+        else:
+            if time_since_ramp_start > 3:
+                time_ramp_end = time.time() + 2
 
-        #     time_since_ramp_start = 0
-        #     if time.time() < time_ramp_end:
-        #         print("END RAMP")
-        #         last_significant_bearing_change = time.time()
-        #         motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
-        #     else:
-        #         new_bearing = cmps.read_bearing_16bit()
-        #         new_bearing = 0
+            time_since_ramp_start = 0
+            if time.time() < time_ramp_end:
+                print("END RAMP")
+                last_significant_bearing_change = time.time()
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+            else:
+                new_bearing = cmps.read_bearing_16bit()
+                new_bearing = 0
 
-        #         if current_bearing is None:
-        #             last_significant_bearing_change = time.time()
-        #             current_bearing = new_bearing
+                if current_follower_bearing is None:
+                    last_significant_bearing_change = time.time()
+                    current_follower_bearing = new_bearing
 
-        #         bearing_diff = abs(new_bearing - current_bearing)
-        #         if frames % 7 == 0: current_bearing = new_bearing
+                bearing_diff = abs(new_bearing - current_follower_bearing)
+                if frames % 7 == 0: current_follower_bearing = new_bearing
 
-        #         # Check if the absolute difference is within the specified range or if it wraps around 360
-        #         bearing_min_err = 6
-        #         if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
-        #             print("SAME BEARING FOR 10 SECONDS")
-        #             m.run_tank_for_time(100, 100, 400)
-        #             last_significant_bearing_change = time.time()
-        #         elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
-        #             last_significant_bearing_change = time.time()
+                # Check if the absolute difference is within the specified range or if it wraps around 360
+                bearing_min_err = 6
+                if (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)) and int(time.time() - last_significant_bearing_change) > 10:
+                    print("SAME BEARING FOR 10 SECONDS")
+                    m.run_tank_for_time(100, 100, 400)
+                    motor_vals = [100, 100]
+                    last_significant_bearing_change = time.time()
+                elif not (bearing_diff <= bearing_min_err or bearing_diff >= (360 - bearing_min_err)):
+                    last_significant_bearing_change = time.time()
 
-        motor_vals = m.run_steer(follower_speed, 100, current_steering)
+        if motor_vals is None:
+            motor_vals = m.run_steer(follower_speed, 100, current_steering)
 
         # ----------
         # DEBUG INFO
