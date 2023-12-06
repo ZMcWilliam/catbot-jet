@@ -202,10 +202,26 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
     # Restrict target_bearing to 0-359
     target_bearing = target_bearing % 360
 
+    last_bearings = []
+    speed_adj = 0
     start_time = time.time()
     while time.time() - start_time < timeout:
         current_bearing = cmps.read_bearing_16bit()
         error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+        if len(last_bearings) >= 20:
+            last_bearings.pop(0)
+        last_bearings.append(int(current_bearing/2))
+
+        if len(last_bearings) >= 20 and sum(last_bearings) / len(last_bearings) == last_bearings[0]:
+            speed_adj += 3
+            print(f"{debug_prefix} Bearing not changing, increasing speed by {speed_adj}")
+        else:
+            speed_adj = 0
+
+        if speed_adj > 60:
+            print("Jumping forward")
+            m.run_tank_for_time(40, 40, 100)
 
         if error < cutoff_error:
             print(f"{debug_prefix} FOUND Bearing: {current_bearing}\tTarget: {target_bearing}\tError: {error}")
@@ -216,6 +232,7 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
         min_speed = 25 # Speed to rotate when error is 0
 
         rotate_speed = ((max_speed - min_speed)/180) + min_speed
+        rotate_speed += speed_adj
 
         # Rotate in the direction closest to the bearing
         if (current_bearing - target_bearing) % 360 < 180:
