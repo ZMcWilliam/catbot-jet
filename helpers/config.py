@@ -5,6 +5,7 @@ with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 calibration_map_obst = 255 / np.array(calibration_data["calibration_map_w_obst"])
+calibration_map_silver = 255 / np.array(calibration_data["calibration_map_w_silver"])
 
 with open("config.json", "r", encoding="utf-8") as json_file:
     config_data_raw = json.load(json_file)
@@ -36,7 +37,8 @@ config_values = {
     "green_turn_hsv_threshold": config_data["green_turn_hsv_threshold"],
     "red_hsv_threshold": config_data["red_hsv_threshold"],
     "calibration_map": calibration_map,
-    "calibration_map_obst": calibration_map_obst
+    "calibration_map_obst": calibration_map_obst,
+    "calibration_map_silver": calibration_map_silver,
 }
 
 def get(key=None):
@@ -55,6 +57,7 @@ def get(key=None):
 
 processing_conf = {
     "calibration_map": calibration_map,
+    "calibration_map_silver": calibration_map_silver,
     "black_line_threshold": config_values["black_line_threshold"],
     "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
     "red_hsv_threshold": config_values["red_hsv_threshold"],

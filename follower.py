@@ -78,6 +78,7 @@ red_stop_check = 0
 evac_detect_check = 0
 
 silver_prediction = False
+silver_first_detect_time = time.time() - 60
 
 pid_last_error = 0
 pid_integral = 0
@@ -1044,6 +1045,8 @@ while program_active:
         img0_clean = img0.copy() # Used for displaying the image without any overlays
 
         img0_gray = frame_processed["gray"].copy()
+        img0_silver = frame_processed["silver"].copy()
+        img0_silver_binary = frame_processed["silver_binary"].copy()
         # img0_gray_scaled = frame_processed["gray_scaled"].copy()
         img0_binary = frame_processed["binary"].copy()
         img0_hsv = frame_processed["hsv"].copy()
@@ -1063,30 +1066,57 @@ while program_active:
         # ----------------
         silver_inference_start = time.time()
         if silver_prediction > 0 or frames % 2 == 0:
-            if infer_silver(img0_gray):
-                # TODO: PLANE CODE - NEEDS TESTING
+            if infer_silver(img0_silver):
                 # We need to run some extra checks, just in case the model returned a false positive
                 # As silver makes the image output inconsistent, we can check that:
                 # - The top 20px of the image must all be white
                 # - A black comtour that touches the bottom of the image must exist
-                # - A black contour that touches both sides of the image (within 20px) must exist
                 # - Very little to no green is in the image
+                # - The TOF sensor is not detecting anything within 10cm
+                # - There are more than 3 black contours above 500px in area
 
+                black_contours_silver, _ = cv2.findContours(cv2.bitwise_not(img0_silver_binary), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 top_check_threshold = 20
-                if sum([sum(a) for a in img0_binary[0:top_check_threshold]]) == img0_binary.shape[1] * 255 * top_check_threshold:
-                    sides_touching = []
-                    for black_rect in [cv2.boundingRect(c) for c in black_contours if cv2.contourArea(c) > 2000]:
-                        if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_binary.shape[0] - 3:
-                            sides_touching.append("bottom")
-                        if "left" not in sides_touching and black_rect[0] < 20:
-                            sides_touching.append("left")
-                        if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_binary.shape[1] - 20:
-                            sides_touching.append("right")
-                        
-                        total_green_area = np.count_nonzero(img0_green == 0)
-                        if len(sides_touching) == 3 and total_green_area < 500:
-                            silver_prediction += 1
-                            break
+                sides_touching = []
+                black_filtered = [c for c in black_contours_silver if cv2.contourArea(c) > 500]
+                for black_rect in [cv2.boundingRect(c) for c in black_filtered]:
+                    if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_silver_binary.shape[0] - 3:
+                        sides_touching.append("bottom")
+                    if "left" not in sides_touching and black_rect[0] < 20:
+                        sides_touching.append("left")
+                    if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_silver_binary.shape[1] - 20:
+                        sides_touching.append("right")
+                    if "top" not in sides_touching and black_rect[1] < 20:
+                        sides_touching.append("top")
+                total_green_area = np.count_nonzero(img0_green == 0)
+
+                check_a = sum([sum(a) for a in img0_silver_binary[0:top_check_threshold]]) == img0_silver_binary.shape[1] * 255 * top_check_threshold
+                check_b = "bottom" in sides_touching
+                check_c = total_green_area < 500
+                check_d = tof.range_mm > 100
+                check_e = len(black_filtered) > 3 # TODO: Check this, silver should tend to cause chaos and hence have more contours... This avoids triggering on a gap in line
+                if check_a and check_b and check_c and check_d and check_e:
+                    silver_prediction += 1
+                    cv2.putText(img0_silver, "CONFIRM", (210, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+                else:
+                    silver_prediction = 0
+
+                cv2.putText(img0_silver, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+
+                cv2.putText(
+                    img0_silver, 
+                    f"{'A' if check_a else '-'} {'B' if check_b else '-'} {'C' if check_c else '-'} {'D' if check_d else '-'} {'E' if check_e else '-'}",
+                    (10, 85), 
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5, 
+                    (66, 32, 11), 
+                    2
+                )
+                cv2.putText(img0_silver, "Green Area: " + str(total_green_area), (10, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (66, 32, 11), 2)
+                cv2.putText(img0_silver, "Sides: " + str(sides_touching), (10, 145), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (66, 32, 11), 2)
+                cv2.putText(img0_silver, f"Blk Num: {len(black_contours)}/{len(black_filtered)}", (10, 165), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (66, 32, 11), 2)
+
+                cv2.putText(img0_silver, f"{silver_prediction}/5", (10, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             else:
                 silver_prediction = 0
             silver_inference_time_ms = (time.time() - silver_inference_start) * 1000
@@ -1094,18 +1124,20 @@ while program_active:
             silver_prediction = 0
             silver_inference_time_ms = 0
 
-        if silver_prediction > 20:
+        if silver_prediction >= 5:
             print("Silver Confirmed")
             run_evac()
             silver_prediction = 0
             continue
-        elif silver_prediction == 5:
-            print(f"Silver Detected - 5/20") 
-            m.run_tank_for_time(-30, -30, 100)
-            continue
-        elif silver_prediction > 5:
-            print(f"Silver Detected - {silver_prediction}/20") 
-            m.run_tank(20, 20)
+        elif silver_prediction > 1:
+            print(f"Silver Detected - {silver_prediction}/5") 
+            m.run_tank(15, 15)
+
+            cv2.imshow("img0_silver / img0_red", img0_silver)
+            k = cv2.waitKey(1)
+            if k & 0xFF == ord('q'):
+                program_active = False
+                break
             continue
 
         # -----------
@@ -1284,7 +1316,7 @@ while program_active:
                 time.sleep(7)
 
                 if debug_state():
-                    cv2.imshow("img0_red", img0_red)
+                    cv2.imshow("img0_silver / img0_red", img0_red)
                     cv2.waitKey(1)
 
                 if red_stop_check > 3:
@@ -1834,11 +1866,13 @@ while program_active:
             # preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0_contours", preview_image_img0_contours)
 
+            cv2.imshow("img0_silver / img0_red", img0_silver)
+
             if not has_moved_windows:
                 # Placeholder for images that are yet to show
                 img0_empty = np.zeros(img0.shape, np.uint8)
                 cv2.imshow("img0_nbc", img0_empty)
-                cv2.imshow("img0_red", img0_empty)
+                cv2.imshow("img0_silver / img0_red", img0_empty)
                 cv2.imshow("img0_raw", img0_empty)
 
             k = cv2.waitKey(1)
@@ -1856,9 +1890,9 @@ while program_active:
 
             if not has_moved_windows:
                 cv2.moveWindow("img0", 75, 50)
-                cv2.moveWindow("img0_contours", 75, 50)
-                cv2.moveWindow("img0_nbc", 675, 50)
-                cv2.moveWindow("img0_red", 975, 50)
+                cv2.moveWindow("img0_contours", 375, 50)
+                cv2.moveWindow("img0_silver / img0_red", 675, 50)
+                cv2.moveWindow("img0_nbc", 975, 50)
                 cv2.moveWindow("img0_raw", 1275, 50)
                 has_moved_windows = True
     except Exception:

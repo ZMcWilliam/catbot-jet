@@ -1,6 +1,5 @@
 __pycache__
 env
-calibration.json
 ml/data_in
 ml/data_out
 ml/model/_tmp

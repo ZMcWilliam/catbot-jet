@@ -132,22 +132,29 @@ class CameraStream:
             raise Exception(f"[CAMERA] C{self.num} has no conf for processing")
 
         resized = self.resize_image(image)
+        resized_silver = self.resize_image(image, offset_y=0)
         # resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
         # Convert image to grayscale/HSV
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray_silver = cv2.cvtColor(resized_silver, cv2.COLOR_BGR2GRAY)
         hsv = cv2.cvtColor(resized, cv2.COLOR_BGR2HSV)
 
         # Blur the grayscale image slightly
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        gray_silver = cv2.GaussianBlur(gray_silver, (5, 5), 0)
 
         # Scale white values based on the inverse of the calibration map
         gray_scaled = self.processing_conf["calibration_map"] * gray
+        gray_silver_scaled = self.processing_conf["calibration_map_silver"] * gray_silver
 
         # Get the binary image
         black_line_threshold = self.processing_conf["black_line_threshold"]
         binary = ((gray_scaled > black_line_threshold) * 255).astype(np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
+
+        silver_binary = ((gray_silver_scaled > black_line_threshold) * 255).astype(np.uint8)
+        silver_binary = cv2.morphologyEx(silver_binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
         # Find green in the image
         green_turn_hsv_threshold = self.processing_conf["green_turn_hsv_threshold"]
@@ -164,6 +171,8 @@ class CameraStream:
             "resized": resized,
             "gray": gray,
             "gray_scaled": gray_scaled,
+            "silver": gray_silver,
+            "silver_binary": silver_binary,
             "binary": binary,
             "hsv": hsv,
             "green": green,

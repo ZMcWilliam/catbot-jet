@@ -13,7 +13,7 @@ cam = c.CameraStream(
 )
 cam.wait_for_image()
 
-loaded = tf.saved_model.load("ml/model/silver/trt")
+loaded = tf.saved_model.load("ml/model/silver-trt")
 infer = loaded.signatures["serving_default"]
 print("Loaded model. Waiting for first inference...")
 
@@ -41,6 +41,15 @@ try:
 
         frame_processed = cam.read_stream_processed()
         img0 = frame_processed["resized"]
+        img0_binary = frame_processed["binary"].copy()
+
+        img0_green = frame_processed["green"].copy()
+        img0_line = frame_processed["line"].copy()
+
+        img0_line_not = cv2.bitwise_not(img0_line)
+
+        raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
         input_data = prepare_frame(frame_processed["gray"])
 
@@ -58,7 +67,34 @@ try:
         predicted_class = int(np.argmax(labels, axis=1))
 
         if predicted_class == 1:
+            top_check_threshold = 20
+            sides_touching = []
+            black_filtered = [c for c in black_contours if cv2.contourArea(c) > 500]
+            for black_rect in [cv2.boundingRect(c) for c in black_filtered]:
+                if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_binary.shape[0] - 3:
+                    sides_touching.append("bottom")
+                if "left" not in sides_touching and black_rect[0] < 20:
+                    sides_touching.append("left")
+                if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_binary.shape[1] - 20:
+                    sides_touching.append("right")
+                if "top" not in sides_touching and black_rect[1] < 20:
+                    sides_touching.append("top")
+            total_green_area = np.count_nonzero(img0_green == 0)
+
+            check_a = sum([sum(a) for a in img0_binary[0:top_check_threshold]]) == img0_binary.shape[1] * 255 * top_check_threshold
+            check_b = "bottom" in sides_touching
+            check_c = total_green_area < 500
+            if check_a and check_b and check_c:
+                cv2.putText(img0, "CONFIRM", (210, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+
             cv2.putText(img0, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+
+            cv2.putText(img0, "A: " + str(check_a), (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0, "B: " + str(check_b), (10, 105), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0, "C: " + str(check_c), (10, 125), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0, "Green Area: " + str(total_green_area), (10, 145), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0, "Sides: " + str(sides_touching), (10, 165), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
+            cv2.putText(img0, f"Blk Num: {len(black_contours)}/{len(black_filtered)}", (10, 185), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
 
         cv2.putText(img0, f"{inference_time_ms:.2f} ms", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)
         cv2.putText(img0, f"{current_fps:.1f} fps", (10, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 100, 40), 2)

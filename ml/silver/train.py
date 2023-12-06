@@ -29,7 +29,7 @@ for category in ["with", "without"]:
     for filename in os.listdir(os.path.join(TRAIN_PATH, category)):
         image_path = os.path.join(TRAIN_PATH, category, filename)
         img0_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        img0_gray = cv2.resize(img0_gray, (0,0), fx=0.5, fy=0.5)
+        img0_gray = cv2.resize(img0_gray, (TARGET_WIDTH, TARGET_HEIGHT))
         train_images.append(img0_gray)
         train_targets.append(0 if category == "without" else 1)
 
@@ -46,7 +46,7 @@ for category in ["with", "without"]:
     for filename in os.listdir(os.path.join(TEST_PATH, category)):
         image_path = os.path.join(TEST_PATH, category, filename)
         img0_gray = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        img0_gray = cv2.resize(img0_gray, (0,0), fx=0.5, fy=0.5)
+        img0_gray = cv2.resize(img0_gray, (TARGET_WIDTH, TARGET_HEIGHT))
 
         test_images.append(img0_gray)
         test_targets.append(0 if category == "without" else 1)
@@ -77,12 +77,12 @@ model.summary()
 # Train the model
 model.fit(train_images, train_targets, batch_size=10, epochs=40, verbose=1)
 
+# Save the trained model
+model.save(MODEL_OUTPUT_PATH)
+
 # Evaluate the model
 test_loss, test_accuracy = model.evaluate(np.array(test_images), np.array(test_targets), verbose=2)
 print(f"Test loss: {test_loss:.4f}, Test accuracy: {test_accuracy:.4f}")
-
-# Save the trained model
-model.save(MODEL_OUTPUT_PATH)
 
 # Create a TensorRT converter
 converter = trt.TrtGraphConverterV2(
@@ -103,7 +103,7 @@ converter.build(input_fn=input_fn)
 converter.save(MODEL_OUTPUT_PATH_TRT)
 
 # Evaluate the TRT model
-loaded = tf.saved_model.load(f"ml/model/{MODEL}/trt")
+loaded = tf.saved_model.load(f"ml/model/{MODEL}-trt")
 infer = loaded.signatures["serving_default"]
 
 test_input_data = []

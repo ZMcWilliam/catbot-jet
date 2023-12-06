@@ -3,7 +3,8 @@ import os
 import numpy as np
 
 TRAIN_PERCENTAGE = 0.8
-SKIP_AMT = 4 # Skip every n images
+SKIP_AMT_WITH = 2 # Skip every n images
+SKIP_AMT_WITHOUT = 3
 TARGET_INPUT_PATH = "ml/data_in/silver"
 UPSAMPLED_IMAGES_PATH = "ml/data_out/silver"
 
@@ -18,7 +19,7 @@ image_data = []
 for folder_type in ["with", "without"]:
     folder_path = os.path.join(TARGET_INPUT_PATH, folder_type)
     for i, filename in enumerate(os.listdir(folder_path)):
-        if i % SKIP_AMT != 0:
+        if i % (SKIP_AMT_WITH if folder_type == "with" else SKIP_AMT_WITHOUT) != 0:
             continue
         image_path = os.path.join(folder_path, filename)
         image_data.append((image_path, folder_type))

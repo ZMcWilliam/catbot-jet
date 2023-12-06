@@ -20,6 +20,7 @@ calibration_data = {
     "calibration_value_w": 0,
     "calibration_map_w": [],
     "calibration_map_w_obst": [],
+    "calibration_map_w_silver": [],
 }
 
 try:
@@ -49,18 +50,24 @@ while True:
         img0_gray_obst = cv2.cvtColor(img0_resized_obst, cv2.COLOR_BGR2GRAY)
         img0_gray_obst = cv2.GaussianBlur(img0_gray_obst, (5, 5), 0)
 
+        img0_resized_silver = cam.resize_image(img0, offset_y=0)
+        img0_gray_silver = cv2.cvtColor(img0_resized_silver, cv2.COLOR_BGR2GRAY)
+        img0_gray_silver = cv2.GaussianBlur(img0_gray_silver, (5, 5), 0)
+
         calibration_images[requested].append(img0_gray)
         calibration_images[requested + "_obst"] = img0_gray_obst
+        calibration_images[requested + "_silver"] = img0_gray_silver
         print(f"Calibration image {len(calibration_images[requested])} of {NUM_CALIBRATION_IMAGES} captured.")
 
         time.sleep(0.01)
         cv2.imshow("img0_gray", img0_gray)
         cv2.imshow("img0_gray_obst", img0_gray_obst)
+        cv2.imshow("img0_gray_silver", img0_gray_silver)
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):
             break
 
-    for suffix in ["", "_obst"]:
+    for suffix in ["", "_obst", "_silver"]:
         # Calculate the average grayscale value across all calibration images
         calibration_data["calibration_value_" + requested + suffix] = np.mean([np.mean(img_gray) for img_gray in calibration_images[requested]])
         # Create an empty calibration map

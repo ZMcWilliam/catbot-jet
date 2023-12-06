@@ -9,6 +9,7 @@ with open("calibration.json", "r", encoding="utf-8") as json_file:
     calibration_data = json.load(json_file)
 calibration_map = 255 / np.array(calibration_data["calibration_map_w"])
 calibration_map_obst = 255 / np.array(calibration_data["calibration_map_w_obst"])
+calibration_map_silver = 255 / np.array(calibration_data["calibration_map_w_silver"])
 
 with open("config.json", "r", encoding="utf-8") as json_file:
     config_data = json.load(json_file)
@@ -117,6 +118,7 @@ def show_selected_tab(tab_id):
         config_values = {
             "calibration_map": calibration_map,
             "calibration_map_obst": calibration_map_obst,
+            "calibration_map_silver": calibration_map_silver,
             "black_line_threshold": config_data["main"]["configs"]["black_line_threshold"]["data"]["val"],
             "obstacle_line_threshold": config_data["main"]["configs"]["obstacle_line_threshold"]["data"]["val"],
             "green_turn_hsv_threshold": [np.array(bound) for bound in [
@@ -154,6 +156,7 @@ def show_selected_tab(tab_id):
 
         cam.set_processing_conf({
             "calibration_map": config_values["calibration_map"],
+            "calibration_map_silver": config_values["calibration_map_silver"],
             "black_line_threshold": config_values["black_line_threshold"],
             "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
             "red_hsv_threshold": config_values["red_hsv_threshold"],
