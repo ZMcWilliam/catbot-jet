@@ -276,17 +276,19 @@ def avoid_obstacle() -> None:
     global program_active
 
     a_dist_back = 500
-    a_ang_turn = 80
-    a_second_steer = 25
-    a_timeout = 1.7
+    a_ang_turn = 85
+    a_second_steer = 28
+    a_timeout = 2.4
 
     b_dist_back = 600
     b_ang_turn = 50
-    b_time_approach = 1950
+    b_timeout = 1
 
     print("START OF OBSTACLE")
     # run_to_dist(30, 2, 30, 23, 1200, False)
-    m.run_tank_for_time(-40, -40, 150)
+    servo.cam.to(45)
+    m.run_tank_for_time(-40, -40, 200)
+    time.sleep(0.8)
 
     initial_obs_bearing = cmps.read_bearing_16bit()
 
@@ -304,30 +306,36 @@ def avoid_obstacle() -> None:
 
     img0_gray_obst_not = cv2.bitwise_not(img0_binary_obstacle)
     black_contours, _ = cv2.findContours(img0_gray_obst_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 4000]
+    black_contours_filtered = [[c, cv2.contourArea(c)] for c in black_contours]
+    black_contours_filtered = sorted([[c, a] for c, a in black_contours_filtered if a > 1500], key=lambda x: x[1], reverse=True)
 
     line_side = None
-    for c in black_contours_filtered:
+    for c, a in black_contours_filtered:
+        print(a)
         x, y, w, h = cv2.boundingRect(c)
 
-        touches_middle = x < img0_resized_obst.shape[1] / 2 < x + w
-
-        cond_r = touches_middle and x + w > img0_resized_obst.shape[1] - 3
-        cond_l = touches_middle and x < 3
+        cond_r = x + w > img0_resized_obst.shape[1] - 15
+        cond_l = x < 15
 
         if cond_r and cond_l:
             cv2.drawContours(img0_resized_obst, [c], -1, (0, 255, 255), 3)
         elif cond_r:
             line_side = "R"
             cv2.drawContours(img0_resized_obst, [c], -1, (0, 255, 0), 3)
+            break
         elif cond_l:
             line_side = "L"
             cv2.drawContours(img0_resized_obst, [c], -1, (255, 0, 0), 3)
+            break
         else:
             line_side = "S"
             cv2.drawContours(img0_resized_obst, [c], -1, (0, 0, 255), 3)
 
     print(f"Line Side: {line_side}")
+
+    time.sleep(0.3)
+
+    servo.cam.toMin()
 
     img0 = frame_processed["resized"]
     cv2.imshow("img0", img0)
@@ -337,7 +345,7 @@ def avoid_obstacle() -> None:
     cv2.moveWindow("img0_resized_obst", 950, 400)
     cv2.moveWindow("img0_binary_obstacle", 950, 750)
 
-    k = cv2.waitKey(1)
+    k = cv2.waitKey(5)
     if k & 0xFF == ord('q'):
         program_active = False
         return
@@ -361,48 +369,63 @@ def avoid_obstacle() -> None:
 
         if obstacle_dir == -1: m.run_tank(100, a_second_steer)
         else: m.run_tank(a_second_steer, 100)
-
-        time_avoid_start = time.time()
-
-        # Start checking for a line while continuing to rotate around the obstacle
-        while True:
-            frame_processed = cam.read_stream_processed()
-            
-            if debug_state():
-                img0 = frame_processed["resized"]
-
-                if time.time() - time_avoid_start <= a_timeout:
-                    cv2.putText(img0, "TIMEOUT", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                cv2.imshow("img0", img0)
-
-                k = cv2.waitKey(1)
-                if k & 0xFF == ord('q'):
-                    program_active = False
-                    break
-
-            img0_line_not = cv2.bitwise_not(frame_processed["line"])
-            black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
-
-            if len(black_contours_filtered) >= 1 and time.time() - time_avoid_start > a_timeout:
-                print("[OBSTACLE] Found Line")
-                print(f"Init: {initial_obs_bearing}\tCurrent: {cmps.read_bearing_16bit()}")
-                break
-
-        m.stop_all()
-        time.sleep(0.6)
-        m.run_tank_for_time(40, 40, 700)
-
-        align_to_bearing(initial_obs_bearing, 1, debug_prefix="OBSTACLE FINAL: ")
     else:
         m.stop_all()
         obstacle_dir = -1 if line_side == "L" else 1
         m.run_tank_for_time(-40, -40, b_dist_back)
         align_to_bearing(initial_obs_bearing + (b_ang_turn * obstacle_dir), 1, debug_prefix=f"OBSTACLE {line_side} ALIGN: ")
-        time.sleep(0.2)
-        m.run_tank_for_time(40, 40, b_time_approach)
+
+        m.run_tank(40, 40)
+
+    time_avoid_start = time.time()
+
+    # Start checking for a line while continuing to rotate around the obstacle
+    while True:
+        frame_processed = cam.read_stream_processed()
+        
+        if debug_state():
+            img0 = frame_processed["resized"]
+
+            if time.time() - time_avoid_start <= (a_timeout if line_side == "S" else b_timeout):
+                cv2.putText(img0, "TIMEOUT", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            cv2.imshow("img0", img0)
+
+            k = cv2.waitKey(1)
+            if k & 0xFF == ord('q'):
+                program_active = False
+                break
+
+        img0_line_not = cv2.bitwise_not(frame_processed["line"])
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 5000]
+
+        if len(black_contours_filtered) >= 1 and time.time() - time_avoid_start > (a_timeout if line_side == "S" else b_timeout):
+            print("[OBSTACLE] Found Line")
+            print(f"Init: {initial_obs_bearing}\tCurrent: {cmps.read_bearing_16bit()}")
+            break
+
+    m.stop_all()
+    time.sleep(0.6)
+
+    if line_side == "S":
+        m.run_tank_for_time(40, 40, 700)
+        align_to_bearing(initial_obs_bearing, 1, debug_prefix="OBSTACLE FINAL: ")
+    else:
+        m.run_tank_for_time(40, 40, 700)
         align_to_bearing(initial_obs_bearing + (90 * obstacle_dir), 1, debug_prefix=f"OBSTACLE {line_side} FINAL: ")
-        m.run_tank_for_time(-30, -30, 300)
+        m.run_tank_for_time(-30, -30, 400)
+
+    # Back up while image is all white
+    while True:
+        frame_processed = cam.read_stream_processed()
+        img0_line_not = cv2.bitwise_not(frame_processed["line"])
+        black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        black_contours_filtered = [c for c in black_contours if cv2.contourArea(c) > 4000]
+
+        if len(black_contours_filtered) == 0:
+            m.run_tank(-30, -30)
+        else:
+            break
 
     m.stop_all()
 
