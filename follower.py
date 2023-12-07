@@ -466,6 +466,8 @@ def run_evac():
     framesEvac = 0
     fpsTimeEvac = time.time()
 
+    start_of_evac_bearing = cmps.read_bearing_16bit()
+
     rescue_mode = "init"
     victim_capture_qty = 0
     victim_check_counter = 0
@@ -1024,14 +1026,109 @@ def run_evac():
                     program_active = False
                     break
 
-        # -----------
-        # EXIT (TODO)
-        # -----------
+        # ----
+        # EXIT
+        # ----
         elif rescue_mode == "exit":
-            print("Exiting Evacuation Zone")
-            time.sleep(2)
-            break
+            print("Exiting Evacuation Zone")      
+            servo.gate.toMin()
+            servo.lift.toMin()
+            servo.claw.toMin()
+            servo.cam.toMin()
+      
+            m.run_tank_for_time(40, 40, 1200, True)
+            align_to_bearing(cmps.read_bearing_16bit() - 180, 10, debug_prefix="ROTATE: ")
 
+            dists = []
+            dists_sec_deriv = []
+
+            target_bearing = cmps.read_bearing_16bit()
+            initial_time = time.time()
+
+            m.run_tank(25, -25)
+            while time.time() - initial_time < 10:
+                current_dist = tof.range_mm
+                current_bearing = cmps.read_bearing_16bit()
+
+                dists.append([current_dist, current_bearing])
+
+                i = len(dists) - 1
+                if i > 2:
+                    dists_sec_deriv.append([dists[i - 2][0] + dists[i - 1][0] - 2 * dists[i][0], current_bearing])
+
+                error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+                if time.time() - initial_time > 3 and error < 5:
+                    m.stop_all()
+                    break
+                print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
+
+            largest_i = [0, 0]
+            for i in range(len(dists_sec_deriv)):
+                if dists_sec_deriv[i][0] > 120:
+                    if dists_sec_deriv[i - 1][0] < dists_sec_deriv[i][0] and dists_sec_deriv[i + 1][0] < dists_sec_deriv[i][0]:
+                        if dists_sec_deriv[largest_i[0]][0] < dists_sec_deriv[i][0]:
+                            if dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[largest_i[0]][0]:
+                                largest_i[1] = largest_i[0]
+                            largest_i[0] = i
+                        elif dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[i][0]:
+                            largest_i[1] = i
+
+            potential_exits = [
+                dists_sec_deriv[largest_i[0]][1],
+                dists_sec_deriv[largest_i[1]][1]
+            ]
+
+
+            #Pick which exit based on entry evac bearing. Potential exits - 180 degrees should be the entry bearing, so pick the one furthest from that
+            sorted_exits = sorted(potential_exits, key=lambda x: abs((x - start_of_evac_bearing - 180) % 360), reverse=True)
+            print(start_of_evac_bearing, potential_exits, sorted_exits)
+
+            align_to_bearing(sorted_exits[1], 2, 10, "UNPREF: ")
+            time.sleep(0.8)
+            align_to_bearing(sorted_exits[0], 2, 10, "TARGET: ")
+
+            m.run_tank_for_time(-35, 35, 150)
+
+            print("Bearing Dif UNPREF: ", (sorted_exits[1] - start_of_evac_bearing) % 360)
+            print("Bearing Dif TARGET: ", (sorted_exits[0] - start_of_evac_bearing) % 360)
+
+            m.run_tank_for_time(35, 35, 1000, True)
+            m.run_tank(35, 35)
+            found_line = False
+            while True:
+                frame_processed = cam.read_stream_processed()
+                img0 = frame_processed["resized"]
+                img0_line = frame_processed["line"]
+                black_contours, _ = cv2.findContours(cv2.bitwise_not(img0_line), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                black_contours_sorted = sorted([[c, cv2.contourArea(c)] for c in black_contours], key=lambda x: x[1], reverse=True)
+
+                meets_target = False
+                if len(black_contours_sorted) > 0:
+                    largest_contour = black_contours_sorted[0]
+                    meets_target = largest_contour[1] > 18000 if not found_line else 7000 < largest_contour[1] < 12000
+
+                # For each black contour, draw a border and the area
+                for i, (c, a) in enumerate(black_contours_sorted):
+                    x, y, w, h = cv2.boundingRect(c)
+                    cv2.drawContours(img0, [c], -1, (0, 255, 0) if i == 0 else (0, 0, 255), 2)
+                    cv2.putText(img0, str(a), (x + int(w / 2), y + int(h / 2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0) if meets_target else (0, 0, 255), 2)
+
+                if found_line and meets_target:
+                    m.run_tank_for_time(40, 40, 200, True)
+                    break
+                
+                if meets_target:
+                    print("FOUND LINE")
+                    found_line = True
+
+                cv2.imshow("img0", img0)
+
+                k = cv2.waitKey(1)
+                if k & 0xFF == ord('q'):
+                    program_active = False
+                    break
+            break
 
 # ------------------------
 # WAIT FOR VISION TO START
