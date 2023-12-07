@@ -178,6 +178,7 @@ def show_selected_tab(tab_id):
         img0_hsv = frame_processed["hsv"].copy()
         img0_green = frame_processed["green"].copy()
         img0_line = frame_processed["line"].copy()
+        img0_silver_binary = frame_processed["silver_binary"].copy()
 
 
         img0_resized_obst = cam.resize_image_obstacle(img0_raw)
@@ -191,7 +192,7 @@ def show_selected_tab(tab_id):
         img0_red = cv2.bitwise_not(cv2.inRange(img0_hsv, config_values["red_hsv_threshold"][0], config_values["red_hsv_threshold"][1]))
         img0_red = cv2.dilate(img0_red, np.ones((5, 5), np.uint8), iterations=2)
 
-        images = ["img0", "img0_gray_scaled", "img0_binary", "img0_line", "img0_hsv", "img0_green", "img0_red", "img0_gray_obst_scaled", "img0_binary_obstacle"]
+        images = ["img0", "img0_gray_scaled", "img0_binary", "img0_line", "img0_hsv", "img0_green", "img0_red", "img0_gray_obst_scaled", "img0_binary_obstacle", "img0_silver_binary"]
         # for req_img in config_data[selected_tab]["images"]:
         for req_img in images:
             img0_preview = None
@@ -203,6 +204,7 @@ def show_selected_tab(tab_id):
             elif req_img == "img0_hsv": img0_preview = img0_hsv
             elif req_img == "img0_green": img0_preview = img0_green
             elif req_img == "img0_red": img0_preview = img0_red
+            elif req_img == "img0_silver_binary": img0_preview = img0_silver_binary
             elif req_img == "img0_gray_obst_scaled": img0_preview = img0_gray_obst_scaled
             elif req_img == "img0_binary_obstacle": img0_preview = img0_binary_obstacle
 
@@ -220,7 +222,7 @@ def show_selected_tab(tab_id):
             for req_img in images:
                 loc_target = None
 
-                base_left = 550
+                base_left = 510
                 base_top = 50
                 x_split = 250
                 y_split = 250
@@ -231,6 +233,7 @@ def show_selected_tab(tab_id):
                 elif req_img == "img0_hsv": loc_target = [base_left + (x_split * 0), base_top + (y_split * 1)]
                 elif req_img == "img0_green": loc_target = [base_left + (x_split * 1), base_top + (y_split * 1)]
                 elif req_img == "img0_red": loc_target = [base_left + (x_split * 2), base_top + (y_split * 1)]
+                elif req_img == "img0_silver_binary": loc_target = [base_left + (x_split * 3), base_top + (y_split * 1)]
                 elif req_img == "img0_gray_obst_scaled": loc_target = [base_left + (x_split * 0), base_top + (y_split * 2)]
                 elif req_img == "img0_binary_obstacle": loc_target = [base_left + (x_split * 2), base_top + (y_split * 2)]
 
