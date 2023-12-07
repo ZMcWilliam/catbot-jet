@@ -54,7 +54,8 @@ KD = 0.1                            # Derivative gain
 follower_speed = 37                 # Base speed of the line follower
 obstacle_threshold = 60             # Minimum distance threshold for obstacles (mm)
 
-pitch_flat = 7
+pitch_flat = 8
+pitch_flat_error = 7 # Allow +- this error for flat
 min_pitch_ramp_up_slight = 20
 min_pitch_ramp_up_full = 30
 
@@ -1253,6 +1254,7 @@ while program_active:
                 # - Very little to no green is in the image
                 # - The TOF sensor is not detecting anything within 10cm
                 # - There are more than 3 black contours above 500px in area
+                # - The current pitch of the robot is within pitch_flat +- pitch_flat_error
 
                 black_contours_silver, _ = cv2.findContours(cv2.bitwise_not(img0_silver_binary), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 top_check_threshold = 20
@@ -1269,12 +1271,16 @@ while program_active:
                         sides_touching.append("top")
                 total_green_area = np.count_nonzero(img0_green == 0)
 
-                check_a = sum([sum(a) for a in img0_silver_binary[0:top_check_threshold]]) == img0_silver_binary.shape[1] * 255 * top_check_threshold
-                check_b = "bottom" in sides_touching
-                check_c = total_green_area < 500
-                check_d = tof.range_mm > 100
-                check_e = len(black_filtered) > 3 # TODO: Check this, silver should tend to cause chaos and hence have more contours... This avoids triggering on a gap in line
-                if check_a and check_b and check_c and check_d and check_e:
+                checks = [
+                    sum([sum(a) for a in img0_silver_binary[0:top_check_threshold]]) == img0_silver_binary.shape[1] * 255 * top_check_threshold,
+                    "bottom" in sides_touching,
+                    total_green_area < 500,
+                    tof.range_mm > 100,
+                    len(black_filtered) >= 2,
+                    pitch_flat - pitch_flat_error < current_pitch < pitch_flat + pitch_flat_error
+                ]
+
+                if sum(checks) == len(checks):
                     silver_prediction += 1
                     cv2.putText(img0_silver, "CONFIRM", (210, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
                 else:
@@ -1284,7 +1290,7 @@ while program_active:
 
                 cv2.putText(
                     img0_silver, 
-                    f"{'A' if check_a else '-'} {'B' if check_b else '-'} {'C' if check_c else '-'} {'D' if check_d else '-'} {'E' if check_e else '-'}",
+                    ' '.join([chr(65 + i) if check else '-' for i, check in enumerate(checks)])
                     (10, 85), 
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5, 
