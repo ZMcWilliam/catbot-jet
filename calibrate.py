@@ -28,6 +28,8 @@ btn_locations = {}
 
 cam = None
 
+frames = 0
+
 def draw_btns():
     global selected_tab
 
@@ -63,11 +65,14 @@ def btn_callback(event, x, y, flags, param):
 
 has_moved_windows = False
 
+line_iterations = 7
 def show_selected_tab(tab_id):
     global has_moved_windows
     global selected_tab
     global btn_img
     global cam
+    global frames
+    global line_iterations
 
     selected_tab = tab_id
 
@@ -162,6 +167,8 @@ def show_selected_tab(tab_id):
             "red_hsv_threshold": config_values["red_hsv_threshold"],
         })
 
+        frames += 1
+
         frame_processed = cam.read_stream_processed()
         if (frame_processed is None or frame_processed["resized"] is None):
             print("Waiting for image...")
@@ -180,6 +187,9 @@ def show_selected_tab(tab_id):
         img0_line = frame_processed["line"].copy()
         img0_silver_binary = frame_processed["silver_binary"].copy()
 
+        if frames % 120 < 60:
+            img0_line = cv2.erode(img0_line, np.ones((5, 5), np.uint8), iterations=line_iterations)
+            img0_line = cv2.dilate(img0_line, np.ones((5, 5), np.uint8), iterations=line_iterations)
 
         img0_resized_obst = cam.resize_image_obstacle(img0_raw)
         img0_gray_obst = cv2.cvtColor(img0_resized_obst, cv2.COLOR_BGR2GRAY)
@@ -215,6 +225,9 @@ def show_selected_tab(tab_id):
         k = cv2.waitKey(1)
         if k & 0xFF == ord('q'):
             break
+
+        if k & 0xFF == ord('l'):
+            line_iterations = int(input("Line iterations: "))
 
         if not has_moved_windows:
             has_moved_windows = True
