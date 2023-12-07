@@ -471,6 +471,7 @@ def run_evac():
     victim_check_counter = 0
     corner_check_counter = 0
     current_victim_start = time.time()
+    last_victim_time = time.time()
 
     m.stop_all()
     
@@ -583,6 +584,7 @@ def run_evac():
             rescue_mode = "victim"
             fpsTimeEvac = time.time()
             current_victim_start = time.time()
+            last_victim_time = time.time()
             framesEvac = 0
             continue
 
@@ -594,10 +596,17 @@ def run_evac():
                 print("Found all victims")
                 rescue_mode = "corner_green"
 
-            # TODO: PLANE CODE - NEEDS TESTING
             if time.time() - fpsTimeEvac > 30 + (victim_capture_qty * 40):
                 print("VICTIMS TOOK TOO LONG - SKIPPING TO GREEN CORNER")
                 rescue_mode = "corner_green"
+
+            if time.time() - last_victim_time > 5:
+                print("Could not find a victim, moving forward")
+                if tof.range_mm > 1200:
+                    m.run_tank_for_time(40, -40, 900)
+
+                m.run_tank_for_time(40, 40, 1000)
+                last_victim_time = time.time()
 
             servo.gate.toMin()
             servo.lift.toMax()
@@ -649,6 +658,7 @@ def run_evac():
                     found_victims = filtered_victims
 
             if len(found_victims) >= 1:
+                last_victim_time = time.time()
                 found_victims = sorted(found_victims, key=lambda x: x[2])
                 v_target = found_victims[0]
                 
@@ -740,6 +750,7 @@ def run_evac():
                         servo.cam.to(80)
                         time.sleep(1)
                         current_victim_start = time.time()
+                        last_victim_time = time.time()
                     
                     if v_target[0] == 1 and victim_capture_qty > 2:
                         # There are only 2 silver balls, so we must have missed one earlier if we now have >2
