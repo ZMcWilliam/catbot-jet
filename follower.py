@@ -44,8 +44,9 @@ DEBUGGER = True # Should the debug switch actually work? This should be set to f
 max_error = 145                     # Maximum error value when calculating a percentage
 max_angle = 90                      # Maximum angle value when calculating a percentage
 error_weight = 0.5                  # Weight of the error value when calculating the PID input
-angle_weight = 1 - error_weight       # Weight of the angle value when calculating the PID input
+angle_weight = 1 - error_weight     # Weight of the angle value when calculating the PID input
 black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
+turning_line_iterations = 7         # While doing a green turn, dilate/erode by this much to fill in gaps
 
 KP = 1.2                            # Proportional gain
 KI = 0                              # Integral gain
@@ -1228,6 +1229,11 @@ while program_active:
 
         img0_line_not = cv2.bitwise_not(img0_line)
 
+        # The tiles at the competition have white gaps in between, which caused issues in the first round
+        # This ensures that while responding to a green turn, all lines will be connected
+        if turning:
+            img0_line = cv2.erode(img0_line, np.ones((5, 5), np.uint8), iterations=turning_line_iterations)
+            img0_line = cv2.dilate(img0_line, np.ones((5, 5), np.uint8), iterations=turning_line_iterations)
 
         current_pitch = cmps.read_pitch()
 
