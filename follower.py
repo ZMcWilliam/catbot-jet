@@ -556,7 +556,7 @@ def run_evac():
                 current_bearing = cmps.read_bearing_16bit()
                 error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
 
-                if time.time() - last_pass_time > 3 and error < 5:
+                if (time.time() - last_pass_time > 3 and error < 5) or time.time() - last_pass_time > 8:
                     if passes < 1:
                         last_pass_time = time.time()
                         passes += 1
@@ -652,7 +652,7 @@ def run_evac():
             v_target = None
 
             # Only approach silver victims until both are found or 80 seconds have passed
-            if victim_capture_qty < 2 and time.time() - evac_start < 80:
+            if victim_capture_qty < 2 and time.time() - evac_start < (60 if victim_capture_qty > 0 else 20):
                 found_victims = [v for v in found_victims if v[0] == 1]
 
             # Regardless of count (perhaps we incorrectly counted...), always ignore a black victim if a silver exists too
