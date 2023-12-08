@@ -1296,7 +1296,7 @@ while program_active:
 
                 cv2.putText(
                     img0_silver, 
-                    ' '.join([chr(65 + i) if check else '-' for i, check in enumerate(checks)])
+                    ' '.join([chr(65 + i) if check else '-' for i, check in enumerate(checks)]),
                     (10, 85), 
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5, 
