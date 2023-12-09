@@ -35,7 +35,7 @@ class ServoManager:
             "gate": self.create_servo(0, 180, 500, 2500, 15, 15, 130),
             "lift": self.create_servo(1, 270, 500, 2500, 10, 10, 200),
             "cam":  self.create_servo(2, 180, 500, 2500, 30, 30, 90),
-            "claw": self.create_servo(3, 180, 500, 2500, 20, 10, 77),
+            "claw": self.create_servo(3, 180, 500, 2500, 20, 17, 77),
         }
 
     def create_servo(self, port, actuation_range, min_pulse_width, max_pulse_width, initial_angle, r_min, r_max):

@@ -467,8 +467,6 @@ def run_evac():
     framesEvac = 0
     fpsTimeEvac = time.time()
 
-    start_of_evac_bearing = cmps.read_bearing_16bit()
-
     rescue_mode = "init"
     victim_capture_qty = 0
     victim_check_counter = 0
@@ -498,6 +496,7 @@ def run_evac():
     print("Loaded Corners Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
 
     evac_start = time.time()
+    start_of_evac_bearing = cmps.read_bearing_16bit()
 
     while True:
         if int(time.time() - evac_start) % 10 == 0:
@@ -610,6 +609,7 @@ def run_evac():
                 if tof.range_mm > 1200:
                     m.run_tank_for_time(40, -40, 900)
 
+                # TODO: Instead of this, find the largest (non-exit) distance, and drive towards that
                 m.run_tank_for_time(40, 40, 1000)
                 last_victim_time = time.time()
 
@@ -1091,6 +1091,10 @@ def run_evac():
 
             m.stop_all()
             time.sleep(0.6)
+            m.run_tank_for_time(-35, 35, 100)
+            time.sleep(0.3)
+            if tof.range_mm < 500:
+                m.run_tank_for_time(35, -35, 130)
 
             print("Potential Exits: ", potential_exits)
             print("Potential Exits Offset:", potential_exits_offsets)
@@ -1102,7 +1106,35 @@ def run_evac():
             m.run_tank_for_time(35, 35, 1000, True)
             m.run_tank(35, 35)
             found_line = False
+            start_time_exit = time.time()
             while True:
+                if time.time() - start_time_exit > 1.8:
+                    m.stop_all()
+                    time.sleep(2)
+                    break
+
+                if tof.range_mm < 60:
+                    # We hit a wall... back up and find the exit again
+                    m.run_tank_for_time(-35, -35, 800)
+                    
+                    # If the bearing is greater than the target, go left until see the exit
+                    if (sorted_exits[0] - cmps.read_bearing_16bit()) % 360 > 180:
+                        m.run_tank(-35, 35)
+                        while tof.range_mm < 500:
+                            pass
+                        m.stop_all()
+                        m.run_tank_for_time(-35, 35, 200)
+                    else:
+                        m.run_tank(35, -35)
+                        while tof.range_mm < 500:
+                            pass
+                        m.stop_all()
+                        m.run_tank_for_time(35, -35, 200)
+                    
+                    m.run_tank_for_time(35, 35, 400)
+                    time.sleep(1)
+                    break
+
                 frame_processed = cam.read_stream_processed()
                 img0 = frame_processed["resized"]
                 img0_line = frame_processed["line"]
@@ -1121,7 +1153,7 @@ def run_evac():
                     cv2.putText(img0, str(a), (x + int(w / 2), y + int(h / 2)), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0) if meets_target else (0, 0, 255), 2)
 
                 if found_line and meets_target:
-                    m.run_tank_for_time(40, 40, 200, True)
+                    m.run_tank_for_time(40, 40, 300, True)
                     break
                 
                 if meets_target:
