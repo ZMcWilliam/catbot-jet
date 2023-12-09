@@ -138,7 +138,14 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
         left_speed = 40
     if ramp and right_speed < 30:
         right_speed = 40
-    run_tank(left_speed, right_speed)
+
+    left_speed_boosted = left_speed * 1.1
+    right_speed_boosted = right_speed * 1.1
+
+    run(conf_tank["front_l"], left_speed)
+    run(conf_tank["front_r"], right_speed)
+    run(conf_tank["back_l"], left_speed_boosted)
+    run(conf_tank["back_r"], right_speed_boosted)
 
     return [left_speed, right_speed]
 

@@ -44,7 +44,6 @@ DEBUGGER = True # Should the debug switch actually work? This should be set to f
 max_error = 145                     # Maximum error value when calculating a percentage
 max_angle = 90                      # Maximum angle value when calculating a percentage
 error_weight = 0.5                  # Weight of the error value when calculating the PID input
-angle_weight = 1 - error_weight     # Weight of the angle value when calculating the PID input
 black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
 turning_line_iterations = 7         # While doing a green turn, dilate/erode by this much to fill in gaps
 
@@ -1241,6 +1240,8 @@ while program_active:
             img0_binary[0:int(img0_binary.shape[0] * 0.4), :] = 255
             img0_line[0:int(img0_line.shape[0] * 0.4), :] = 255
 
+        is_ramp_up = min_pitch_ramp_up_slight < current_pitch < min_pitch_ramp_up_full + 20
+
         raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -1934,7 +1935,8 @@ while program_active:
         elif lineHitsEdge and extra_pos > 35:
             extra_mult = 0.03 * extra_pos
 
-        current_position = (black_contour_angle_new / max_angle) * angle_weight + (black_contour_error / max_error) * error_weight
+        chosen_error_weight = 0.5 if not is_ramp_up else 0.7
+        current_position = (black_contour_angle_new / max_angle) * (1 - chosen_error_weight) + (black_contour_error / max_error) * chosen_error_weight
         current_position *= 100 * max(extra_mult, 1)
 
         # PID stuff
@@ -1953,16 +1955,16 @@ while program_active:
 
         motor_vals = None
 
-        if min_pitch_ramp_up_slight < current_pitch < min_pitch_ramp_up_full + 20:
+        if is_ramp_up:
             if time_since_ramp_start == 0:
                 time_since_ramp_start = time.time()
             print(f"RAMP ({int(time.time() - time_since_ramp_start)})")
             if time.time() - time_since_ramp_start > 15:
                 motor_vals = m.run_tank(100, 100)
-            elif time.time() - time_since_ramp_start > 10:
+            elif time.time() - time_since_ramp_start > 8:
                 motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
             else:
-                motor_vals = m.run_steer(follower_speed, 70, current_steering, ramp=True)
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
         else:
             if time_since_ramp_start > 3:
                 time_ramp_end = time.time() + 2
