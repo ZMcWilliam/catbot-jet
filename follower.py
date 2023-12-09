@@ -651,7 +651,7 @@ def run_evac():
             v_target = None
 
             # Only approach silver victims until both are found or 80 seconds have passed
-            if victim_capture_qty < 2 and time.time() - evac_start < (60 if victim_capture_qty > 0 else 20):
+            if victim_capture_qty < 2 and time.time() - fpsTimeEvac < (60 if victim_capture_qty > 0 else 20):
                 found_victims = [v for v in found_victims if v[0] == 1]
 
             # Regardless of count (perhaps we incorrectly counted...), always ignore a black victim if a silver exists too
