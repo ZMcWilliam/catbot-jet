@@ -386,7 +386,7 @@ def avoid_obstacle() -> None:
         time.sleep(0.2)
         
         obstacle_dir = -1
-        if tof.range_mm < 150:
+        if tof.range_mm < 220:
             # Likely a wall, let's go the other way
             obstacle_dir = 1
             align_to_bearing(initial_obs_bearing + a_ang_turn, 1, debug_prefix="OBSTACLE AVOID WALL: ")
