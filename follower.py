@@ -1080,17 +1080,20 @@ def run_evac():
                 dists_sec_deriv[largest_i[1]][1]
             ]
 
+            # Pick which exit based on entry evac bearing. Potential exits - 180 degrees should be the entry bearing, so pick the one furthest from that
+            potential_exits_offsets = [(x - 180) % 360 for x in potential_exits]
+            bearing_diffs = [abs(exit_bearing - start_of_evac_bearing) for exit_bearing in potential_exits_offsets]
+            sorted_exits = [x for _, x in sorted(zip(bearing_diffs, potential_exits), key=lambda pair: pair[0], reverse=False)]
 
-            #Pick which exit based on entry evac bearing. Potential exits - 180 degrees should be the entry bearing, so pick the one furthest from that
-            sorted_exits = sorted(potential_exits, key=lambda x: abs((x - start_of_evac_bearing - 180) % 360), reverse=True)
-            print(start_of_evac_bearing, potential_exits, sorted_exits)
+            align_to_bearing(sorted_exits[0], 2, 10, "EXIT TARGET: ")
 
-            align_to_bearing(sorted_exits[1], 2, 10, "UNPREF: ")
-            time.sleep(0.8)
-            align_to_bearing(sorted_exits[0], 2, 10, "TARGET: ")
+            m.stop_all()
+            time.sleep(0.6)
 
-            m.run_tank_for_time(-35, 35, 150)
-
+            print("Potential Exits: ", potential_exits)
+            print("Potential Exits Offset:", potential_exits_offsets)
+            print("Bearing Diffs:", bearing_diffs)
+            print("Sorted Exits:", sorted_exits)
             print("Bearing Dif UNPREF: ", (sorted_exits[1] - start_of_evac_bearing) % 360)
             print("Bearing Dif TARGET: ", (sorted_exits[0] - start_of_evac_bearing) % 360)
 
