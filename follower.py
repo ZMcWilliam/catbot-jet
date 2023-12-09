@@ -574,7 +574,9 @@ def run_evac():
 
             if tof.range_mm > 1000:
                 align_to_bearing(target_bearing + 90, 2, 10, "ROTATE: ")
-            run_to_dist(400, 5, 40, 25, 5000, False)
+
+            if 0 < tof.range_mm < 1000:
+                run_to_dist(400, 5, 40, 25, 5000, False)
 
             print("Done. Finding Victims...")
 
