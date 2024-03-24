@@ -101,7 +101,7 @@ def run(targets: Union[int, List[int]], speed: float) -> None:
         adjusted_speed = normalise_speed(target, speed)
         throttle(target, adjusted_speed)
 
-def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = None, ramp=False) -> List[float]:
+def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: List[int] = None, ramp="inactive") -> List[float]:
     """
     Run a steering drive at a given speed and offset.
 
@@ -110,7 +110,7 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
         max_speed (int): The maximum speed to run the motors at (0-100).
         offset (float, optional): The offset to apply to the motors for steering (default 0)
         skip_range (List[int], optional): The range of speeds to skip when calculating an offset (default [-30, 30]) - Use False to disable
-        ramp (bool, optional): Whether to increase up the speed when the base speed is low (default False)
+        ramp (string, optional): Whether to increase up the speed when the base speed is low (default "inactive") - Any of "inactive", "active", "ending"
 
     Returns:
         List[float]: The final left and right speeds of the motors.
@@ -134,10 +134,11 @@ def run_steer(base_speed: int, max_speed: int, offset: float = 0, skip_range: Li
     left_speed = round(max(min(left_speed, max_speed), -max_speed), 2)
     right_speed = round(max(min(right_speed, max_speed), -max_speed), 2)
 
-    if ramp and left_speed < 30:
-        left_speed = 40
-    if ramp and right_speed < 30:
-        right_speed = 40
+    ramp_base_threshold = 30 if ramp == "active" else 10 # 30 when on a ramp, 10 when leaving the ramp
+    if ramp != "inactive" and left_speed < ramp_base_threshold:
+        left_speed = ramp_base_threshold + 10
+    if ramp != "inactive" and right_speed < ramp_base_threshold:
+        right_speed = ramp_base_threshold + 10
 
     left_speed_boosted = left_speed * 1.1
     right_speed_boosted = right_speed * 1.1

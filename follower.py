@@ -1279,6 +1279,23 @@ while program_active:
 
         is_ramp_up = min_pitch_ramp_up_slight < current_pitch < min_pitch_ramp_up_full + 20
 
+        # If we've been ramping up for more than 1 second, start to slowly extend the lift for weight distribution
+        ramp_lift_thresh = 1
+        if is_ramp_up and time_since_ramp_start > 0 and time.time() - time_since_ramp_start > ramp_lift_thresh:
+            ramp_lift_factor = 4 # seconds to go from min to max
+            r_min = servo.lift.r_min
+            r_max = (servo.lift.r_max - servo.lift.r_min) / 2 # only go half-way
+            
+            lift_target = r_min - ((r_min - r_max) * ((time.time() - time_since_ramp_start - ramp_lift_thresh) / ramp_lift_factor))
+            if lift_target < r_min:
+                lift_target = r_min
+            if lift_target > r_max:
+                lift_target = r_max
+            
+            servo.lift.to(lift_target)
+        else:
+            servo.lift.toMin() # Otherwise, keep the lift up            
+
         raw_white_contours, _ = cv2.findContours(img0_line, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         black_contours, _ = cv2.findContours(img0_line_not, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -1893,14 +1910,24 @@ while program_active:
         elif len(sorted_black_contours) == 0:
             is_broken = False
             new_steer = current_steering
-            if time.time() - last_break_in_line < 3:
-                new_steer = 0
+            if time.time() - last_break_in_line < 2:
+                if is_ramp_up or time.time() < time_ramp_end: # On a ramp? Account for slip so allow slight steering instead of 0
+                    if current_steering > 20: new_steer = 15
+                    elif current_steering < -20: new_steer = -15
+                else:
+                    new_steer = 0
 
                 is_broken = True
-                cv2.putText(img0, "BROKEN LINE", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.putText(img0, f"BROKEN LINE {round(time.time() - last_break_in_line, 1)}s", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
             elif new_steer < -50: new_steer = -100
             elif new_steer > 50: new_steer = 100
+
+            # If we lost the line on a ramp, it's likely we are at the end of the ramp
+            if is_ramp_up or time.time() < time_ramp_end: 
+                if new_steer < -30: new_steer = -100
+                elif new_steer > 30: new_steer = 100
+                print("No black contours found (SORT/RAMP)")
 
             m.run_steer(follower_speed, 100, new_steer)
 
@@ -1999,17 +2026,17 @@ while program_active:
             if time.time() - time_since_ramp_start > 15:
                 motor_vals = m.run_tank(100, 100)
             elif time.time() - time_since_ramp_start > 8:
-                motor_vals = m.run_steer(80, 100, current_steering, ramp=True)
+                motor_vals = m.run_steer(80, 100, current_steering, ramp="active")
             else:
-                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp="active")
         else:
             if time_since_ramp_start > 3:
-                time_ramp_end = time.time() + 2
+                time_ramp_end = time.time() + 1
 
             time_since_ramp_start = 0
             if time.time() < time_ramp_end:
                 print("END RAMP")
-                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp=True)
+                motor_vals = m.run_steer(follower_speed, 100, current_steering, ramp="ending")
 
         if motor_vals is None:
             motor_vals = m.run_steer(follower_speed, 100, current_steering)
@@ -2031,6 +2058,7 @@ while program_active:
             + f"  LF: {'B' if changed_black_contour is not False else '-'} {(current_linefollowing_state or '-'):8}"
             + f"  TP:{int(topmost_point[1]):3d}"
             + f"  OB:{int(front_dist):3d}"
+            + f"  PI:{int(current_pitch):3d}"
             + f"  GR:{total_green_area:5d}")
 
         if debug_state():
