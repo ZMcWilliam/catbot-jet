@@ -17,6 +17,7 @@ def gstreamer_pipeline(sensor_id=0, capture_width=1280, capture_height=720,
         f"videoconvert ! "
         f"video/x-raw, format=(string)BGR ! "
         f"appsink drop=true"
+        f"wait-on-eos=false max-buffers=60 -e -vvv"
     )
 
 def get_camera(num):
@@ -46,6 +47,7 @@ class CameraStream:
 
         self.capture_fails = 0
 
+        self.release_attempted = False
         self.stream_running = True
         self.capture_thread = Thread(target=self.update_stream, args=())
         self.capture_thread.start()
@@ -104,8 +106,11 @@ class CameraStream:
                 self.process_image()
 
         if self.cam is not None:
-            self.cam.release()
-            self.cam = None
+            if self.release_attempted:
+                print(f"[CAMERA] C{self.num} update_stream: Release already attempted")
+            else:
+                self.cam.release()
+                self.cam = None
 
     def resize_image(self, img, target_w=290, target_h=264, offset_x=-2, offset_y=104):
         start_x = (img.shape[1] // 2 - target_w // 2) + offset_x
@@ -179,25 +184,29 @@ class CameraStream:
             "line": line,
         }
 
-    def stop(self):
-        print(f"[CAMERA] C{self.num} Stopping stream")
+    def stop(self, reason="Unknown Reason"):
+        print(f"[CAMERA] C{self.num} stop: Stopping stream ({reason})")
         self.stream_running = False
         
         # Explicitly set the GStreamer elements to the NULL state
         if self.cam is not None:
-            self.cam.release()
-            self.cam = None
+            print(f"[CAMERA] C{self.num} stop: Releasing camera ({reason})")
+            if self.release_attempted:
+                print(f"[CAMERA] C{self.num} stop: Release already attempted")
+            else:
+                self.cam.release()
+                self.cam = None
+        print(f"[CAMERA] C{self.num} stop: Ready to exit ({reason})")
 
     def atexit(self):
-        print(f"\n[CAMERA] C{self.num} Atexit called. Stopping stream...")
-        time.sleep(1)
-        self.stop()
+        if not self.stream_running and self.cam is None:
+            return
+        print(f"\n[CAMERA] C{self.num} Atexit called")
+        self.stop("Atexit")
 
     def signal_handler(self, signum, frame):
-        print(f"\n[CAMERA] C{self.num} Signal received: {signum}. Initiating graceful shutdown...")
-        time.sleep(1)
-        self.stop()
-        print(f"\n[CAMERA] C{self.num} Stream stopped. Exiting...")
+        print(f"\n[CAMERA] C{self.num} Signal received: {signum}")
+        self.stop(f"Signal {signum}")
 
     def set_processing_conf(self, conf):
         self.processing_conf = conf

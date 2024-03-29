@@ -6,6 +6,7 @@
 #                                ╚═════╝╚═╝  ╚═╝   ╚═╝   ╚═════╝  ╚═════╝    ╚═╝        ╚════╝ ╚══════╝   ╚═╝
 
 # RoboCup Junior Rescue Line 2023 - Asia Pacific (South Korea)
+# RoboCup Junior Rescue Line 2024 - Singapore Open
 # https://github.com/zmcwilliam/catbot-rcjap
 
 print("Starting CatBot")
@@ -13,6 +14,7 @@ import time
 import os
 import sys
 import traceback
+import threading
 import math
 import signal
 import board
@@ -20,6 +22,7 @@ import cv2
 import busio
 import numpy as np
 import tensorflow as tf
+import Jetson.GPIO as GPIO
 from colorama import init, Fore, Style
 
 from helpers import camera as c
@@ -59,13 +62,15 @@ pitch_flat_error = 7 # Allow +- this error for flat
 min_pitch_ramp_up_slight = 20
 min_pitch_ramp_up_full = 30
 
+led_b_pin = "GP124" # TEGRA_SOC
+
 # ----------------
 # SYSTEM VARIABLES
 # ----------------
 program_active = True
 has_attempted_exit = False
 has_moved_windows = False
-program_sleep_time = 0.001
+led_mode = "starting"
 
 current_steering = 0
 current_time = time.time()
@@ -87,10 +92,11 @@ silver_first_detect_time = time.time() - 60
 pid_last_error = 0
 pid_integral = 0
 
+start_time = time.time()
+fps_time = time.time()
 frames = 0
-fpsTime = time.time()
-fpsLoop = 0
-fpsCamera = 0
+fps_loop = 0
+fps_camera = 0
 
 time_since_ramp_start = 0
 time_ramp_end = 0
@@ -134,6 +140,10 @@ def infer_silver(frame):
 # ------------------
 # INITIALISE DEVICES
 # ------------------
+GPIO.setmode(GPIO.TEGRA_SOC)
+GPIO.setup(led_b_pin, GPIO.OUT)
+GPIO.output(led_b_pin, GPIO.HIGH)
+
 i2c = busio.I2C(board.SCL, board.SDA)
 
 cam = c.CameraStream(
@@ -143,8 +153,6 @@ cam = c.CameraStream(
 
 servo = ServoManager()
 
-# debug_switch = gpiozero.DigitalInputDevice(PORT_DEBUG_SWITCH, pull_up=True) if DEBUGGER else None
-
 cmps = CMPS14(7, 0x61)
 
 tof = RangeSensorMonitor()
@@ -153,6 +161,33 @@ tof.start()
 # -----------------
 # VARIOUS FUNCTIONS
 # -----------------
+def led_thread_loop():
+    """
+    Thread to handle the LED status
+    """
+    global led_mode
+    global start_time
+    while True:
+        time_diff = (time.time() - start_time)
+
+        if led_mode == "stop": 
+            break
+        elif not program_active:
+            GPIO.output(led_b_pin, GPIO.HIGH if time_diff % 0.5 < 0.25 else GPIO.LOW)
+        elif led_mode == "starting":
+            GPIO.output(led_b_pin, GPIO.LOW)
+        elif led_mode == "running":
+            GPIO.output(led_b_pin, GPIO.HIGH)
+        elif led_mode == "evac-load-a":
+            GPIO.output(led_b_pin, GPIO.HIGH if time_diff % 1 < 0.5 else GPIO.LOW)
+        elif led_mode == "evac-load-b":
+            GPIO.output(led_b_pin, GPIO.HIGH if time_diff % 1 < 0.5 else GPIO.LOW)
+        elif led_mode == "evac-load-c":
+            GPIO.output(led_b_pin, GPIO.HIGH if time_diff % 2 < 1 else GPIO.LOW)
+
+led_thread = threading.Thread(target=led_thread_loop)
+led_thread.start()
+
 def exit_gracefully(signum=None, frame=None) -> None:
     """
     Handles program exit gracefully. Called by SIGINT signal.
@@ -163,21 +198,29 @@ def exit_gracefully(signum=None, frame=None) -> None:
     """
     global program_active
     global has_attempted_exit
+    global led_mode
+
     if has_attempted_exit:
         # We already tried to exit, but may have gotten stuck. Force the exit.
-        print("\nForcefully Exiting")
-        sys.exit()
+        print(Fore.RED + "FORCING EXIT" + Style.RESET_ALL)
+        os.kill(os.getpid(), signal.SIGTERM)
+        return
 
-    print("\n\nExiting Gracefully...\n")
+    print(Fore.CYAN + "EXITING GRACEFULLY" + Style.RESET_ALL)
     has_attempted_exit = True
     program_active = False
     tof.stop()
     cv2.destroyAllWindows()
-    cam.stop()
+    cam.stop("Follower")
+    print(Fore.YELLOW + "STOPPED CAM" + Style.RESET_ALL)
     tof.join()
-    m.stop_all()
+    print(Fore.YELLOW + "STOPPED TOF" + Style.RESET_ALL)
+    led_mode = "stop"
+    led_thread.join()
+    GPIO.output(led_b_pin, GPIO.LOW)
+    GPIO.cleanup()
     print(Fore.GREEN + "SAFE TO EXIT" + Style.RESET_ALL)
-    sys.exit()
+    sys.exit(0)
 
 signal.signal(signal.SIGINT, exit_gracefully)
 
@@ -461,11 +504,14 @@ def avoid_obstacle() -> None:
 # EVACUATION ZONE
 # ---------------
 def run_evac():
-    global fpsCamera
+    global fps_camera
     global program_active
+    global led_mode
     
-    framesEvac = 0
-    fpsTimeEvac = time.time()
+    led_mode = "evac-load-a"
+
+    frames_evac = 0
+    fps_time_evac = time.time()
 
     rescue_mode = "init"
     victim_capture_qty = 0
@@ -478,9 +524,11 @@ def run_evac():
     
     print("EVAC: Loading Models...", end="")
     from ultralytics import YOLO # Yolo takes a few seconds to load, so do it here to avoid every program load being slow
-    model_victims = YOLO("ml/model/victims.pt")
-    model_corners = YOLO("ml/model/corners.pt")
-    print(f"Done. Took {int((time.time() - fpsTimeEvac) * 1000)}ms")
+    model_victims = YOLO("ml/model/victims.pt", task="detect")
+    model_corners = YOLO("ml/model/corners.pt", task="detect")
+    print(f"Done. Took {int((time.time() - fps_time_evac) * 1000)}ms")
+
+    led_mode = "evac-load-b"
 
     print("EVAC: Waiting for first inference of models...")
     frame_processed = cam.read_stream_processed()
@@ -488,12 +536,16 @@ def run_evac():
     img0_resized_evac = cv2.resize(img0_raw, (160, 120))
 
     evac_start = time.time()
-    model_victims(img0_resized_evac, task="detect")
+    model_victims(img0_resized_evac)
     print("Loaded Victims Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
 
+    led_mode = "evac-load-c"
+
     evac_start = time.time()
-    model_corners(img0_resized_evac, task="detect")
+    model_corners(img0_resized_evac)
     print("Loaded Corners Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+
+    led_mode = "running"
 
     evac_start = time.time()
     start_of_evac_bearing = cmps.read_bearing_16bit()
@@ -502,12 +554,12 @@ def run_evac():
         if int(time.time() - evac_start) % 10 == 0:
             print(f"EVAC MODE: {rescue_mode} EVAC TIME: {int(time.time() - evac_start)}")
 
-        framesEvac += 1
+        frames_evac += 1
 
-        fpsEvac = int(framesEvac/(time.time()-fpsTimeEvac))
-        fpsCamera = cam.get_fps()
-        if framesEvac % 20 == 0 and framesEvac != 0:
-            print(f"Evac Mode: {rescue_mode} | Evac FPS: {fpsEvac} | Camera FPS: {cam.get_fps()} | Sleep time: {int(program_sleep_time*1000)}")
+        fpsEvac = int(frames_evac/(time.time()-fps_time_evac))
+        fps_camera = cam.get_fps()
+        if frames_evac % 20 == 0 and frames_evac != 0:
+            print(f"Evac Mode: {rescue_mode} | Evac FPS: {fpsEvac} | Camera FPS: {cam.get_fps()}")
 
         frame_processed = cam.read_stream_processed()
         img0 = frame_processed["resized"]
@@ -586,10 +638,10 @@ def run_evac():
             time.sleep(0.5)
 
             rescue_mode = "victim"
-            fpsTimeEvac = time.time()
+            fps_time_evac = time.time()
             current_victim_start = time.time()
             last_victim_time = time.time()
-            framesEvac = 0
+            frames_evac = 0
             continue
 
         # --------------
@@ -600,7 +652,7 @@ def run_evac():
                 print("Found all victims")
                 rescue_mode = "corner_green"
 
-            if time.time() - fpsTimeEvac > 30 + (victim_capture_qty * 40):
+            if time.time() - fps_time_evac > 30 + (victim_capture_qty * 40):
                 print("VICTIMS TOOK TOO LONG - SKIPPING TO GREEN CORNER")
                 rescue_mode = "corner_green"
 
@@ -653,7 +705,7 @@ def run_evac():
             v_target = None
 
             # Only approach silver victims until both are found or 80 seconds have passed
-            if victim_capture_qty < 2 and time.time() - fpsTimeEvac < (60 if victim_capture_qty > 0 else 20):
+            if victim_capture_qty < 2 and time.time() - fps_time_evac < (60 if victim_capture_qty > 0 else 20):
                 found_victims = [v for v in found_victims if v[0] == 1]
 
             # Regardless of count (perhaps we incorrectly counted...), always ignore a black victim if a silver exists too
@@ -1193,36 +1245,24 @@ print(f"Initial Silver Inference: {inference_time_ms:.2f} ms")
 # ---------
 # MAIN LOOP
 # ---------
-fpsTime = time.time()
+fps_time = time.time()
 while program_active:
     try:
         # ---------------
         # FRAME BALANCING
         # ---------------
         frames += 1
-        fpsLoop = int(frames / (time.time() - fpsTime))
-        fpsCamera = cam.get_fps()
-
-        # if frames > 400:
-        #     sleep_adjustment_amt = 0.0001
-        #     sleep_time_max = 0.02
-        #     sleep_time_min = 0.0001
-        #     target_fps = 70
-        #     if fpsLoop > target_fps + 5 and program_sleep_time < sleep_time_max:
-        #         program_sleep_time += sleep_adjustment_amt
-        #     elif fpsLoop < target_fps and program_sleep_time > sleep_time_min:
-        #         program_sleep_time -= sleep_adjustment_amt
-
-        # if fpsLoop > 65:
-        #     time.sleep(program_sleep_time)
+        fps_loop = int(frames / (time.time() - fps_time))
+        fps_camera = cam.get_fps()
 
         if frames > 5000:
-            fpsTime = time.time()
+            fps_time = time.time()
             frames = 0
 
         if frames % 30 == 0 and frames != 0:
-            print(f"{frames:4d} {fpsLoop:3.0f} {fpsCamera:2.0f}")
+            print(f"{frames:4d} {fps_loop:3.0f} {fps_camera:2.0f}")
 
+        led_mode = "running"
         servo.cam.toMin()
 
         # ------------------
@@ -1363,6 +1403,9 @@ while program_active:
                 cv2.putText(img0_silver, f"Blk Num: {len(black_contours)}/{len(black_filtered)}", (10, 165), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (66, 32, 11), 2)
 
                 cv2.putText(img0_silver, f"{silver_prediction}/5", (10, 205), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+                for i, c in enumerate(black_contours_silver):
+                    cv2.drawContours(img0_silver, [c], -1, (0, 255, 0) if i < len(black_filtered) else (0, 0, 255), 2)
             else:
                 silver_prediction = 0
             silver_inference_time_ms = (time.time() - silver_inference_start) * 1000
@@ -2044,8 +2087,7 @@ while program_active:
         # ----------
         # DEBUG INFO
         # ----------
-        print(f"{frames:4d} {fpsLoop:3.0f} {fpsCamera:2.0f}"
-            # + f" @{(program_sleep_time*1000):3.1f}"
+        print(f"{frames:4d} {fps_loop:3.0f} {fps_camera:2.0f}"
             + (f"  S: {int(silver_prediction) or ' '} {silver_inference_time_ms:5.2f}ms" if silver_inference_time_ms > 0 else " "*14)
             + f" |"
             + f"  An:{black_contour_angle:4d}/{black_contour_angle_new:4d}"
@@ -2100,7 +2142,7 @@ while program_active:
             cv2.putText(preview_image_img0_contours, f"LF State: {current_linefollowing_state}", (10, 330), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
             cv2.putText(preview_image_img0_contours, f"INT Debug: {intersection_state_debug[0]} - {int(time.time() - intersection_state_debug[1])}", (10, 360), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
 
-            cv2.putText(preview_image_img0_contours, f"FPS: {fpsLoop} | {fpsCamera}", (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
+            cv2.putText(preview_image_img0_contours, f"FPS: {fps_loop} | {fps_camera}", (10, 390), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 100, 0), 2)
 
             # preview_image_img0_contours = cv2.resize(preview_image_img0_contours, (0, 0), fx=0.8, fy=0.7)
             cv2.imshow("img0_contours", preview_image_img0_contours)
@@ -2134,6 +2176,10 @@ while program_active:
                 cv2.moveWindow("img0_nbc", 975, 50)
                 cv2.moveWindow("img0_raw", 1275, 50)
                 has_moved_windows = True
+    except KeyboardInterrupt:
+        program_active = False
+        os.kill(os.getpid(), signal.SIGINT)
+        break
     except Exception:
         print("UNHANDLED EXCEPTION: ")
         traceback.print_exc()
