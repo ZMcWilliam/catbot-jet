@@ -1347,47 +1347,49 @@ while program_active:
         # ----------------
         silver_inference_start = time.time()
         if silver_prediction > 0 or frames % 2 == 0:
-            if infer_silver(img0_silver):
+            # If we can't find silver in img0_silver, but we can in img0_gray (after already seeing silver at least once), assume we still see it
+            silver_infer_1 = infer_silver(img0_silver)
+            silver_infer_2 = silver_prediction > 0 and not silver_infer_1 and infer_silver(img0_gray)
+            if silver_infer_1 or silver_infer_2:
                 # We need to run some extra checks, just in case the model returned a false positive
-                # As silver makes the image output inconsistent, we can check that:
-                # - The top 20px of the image must all be white
-                # - A black comtour that touches the bottom of the image must exist
-                # - Very little to no green is in the image
-                # - The TOF sensor is not detecting anything within 10cm
-                # - There are more than 3 black contours above 500px in area
-                # - The current pitch of the robot is within pitch_flat +- pitch_flat_error
+                img0_silver_chosen = img0_silver_binary if silver_infer_1 else img0_binary
 
-                black_contours_silver, _ = cv2.findContours(cv2.bitwise_not(img0_silver_binary), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+                black_contours_silver, _ = cv2.findContours(cv2.bitwise_not(img0_silver_chosen), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
                 top_check_threshold = 20
                 sides_touching = []
                 black_filtered = [c for c in black_contours_silver if cv2.contourArea(c) > 500]
                 for black_rect in [cv2.boundingRect(c) for c in black_filtered]:
-                    if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_silver_binary.shape[0] - 3:
+                    if "bottom" not in sides_touching and black_rect[1] + black_rect[3] > img0_silver_chosen.shape[0] - 3:
                         sides_touching.append("bottom")
                     if "left" not in sides_touching and black_rect[0] < 20:
                         sides_touching.append("left")
-                    if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_silver_binary.shape[1] - 20:
+                    if "right" not in sides_touching and black_rect[0] + black_rect[2] > img0_silver_chosen.shape[1] - 20:
                         sides_touching.append("right")
                     if "top" not in sides_touching and black_rect[1] < 20:
                         sides_touching.append("top")
                 total_green_area = np.count_nonzero(img0_green == 0)
 
+                # As silver makes the image output inconsistent, we can check that:
+                # - The top 20px of the image must be 95% white
+                # - A black comtour that touches the bottom, left, and right of the image must exist
+                # - Very little to no green is in the image
+                # - The TOF sensor is not detecting anything within 10cm
+                # - The current pitch of the robot is within pitch_flat +- pitch_flat_error
                 checks = [
-                    sum([sum(a) for a in img0_silver_binary[0:top_check_threshold]]) == img0_silver_binary.shape[1] * 255 * top_check_threshold,
-                    "bottom" in sides_touching,
+                    np.count_nonzero(img0_silver_chosen[0:top_check_threshold] == 255) / (img0_silver_chosen.shape[1] * top_check_threshold) > 0.95,
+                    sum([side in sides_touching for side in ["bottom", "left", "right"]]) == 3,
                     total_green_area < 500,
                     tof.range_mm > 100,
-                    len(black_filtered) >= 2,
                     pitch_flat - pitch_flat_error < current_pitch < pitch_flat + pitch_flat_error
                 ]
 
                 if sum(checks) == len(checks):
                     silver_prediction += 1
-                    cv2.putText(img0_silver, "CONFIRM", (210, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+                    cv2.putText(img0_silver, "CONFIRM", (190, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
                 else:
                     silver_prediction = 0
 
-                cv2.putText(img0_silver, "SILVER", (210, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
+                cv2.putText(img0_silver, f"SILVER {'A' if silver_infer_1 else 'B'}", (190, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (13, 0, 160), 2)
 
                 cv2.putText(
                     img0_silver, 
