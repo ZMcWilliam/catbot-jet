@@ -333,6 +333,72 @@ def run_to_dist(target_dist: int, cutoff_error: int = 5, speed: int = 40, speed_
     m.stop_all()
     return False
 
+def bearing_difference(a, b):
+    """
+    Returns the smallest difference between two bearings.
+
+    Args:
+        a (int): The first bearing.
+        b (int): The second bearing.
+
+    Returns:
+        int: The smallest difference between the two bearings.
+    """
+    diff = abs(a - b)
+    return min(diff, 360 - diff)
+
+def evac_get_potential_exits(speed: int = 25, mintime: int = 3000):
+    """
+    Returns a list of potential exits of the evacuation zone 
+    by finding large changes in distance while rotating.
+
+    Args:
+        speed (int, optional): The speed to rotate at. Defaults to 25.
+        mintime (int, optional): The minimum time to rotate for. Defaults to 3000.
+
+    Returns:
+        list: A list of potential exit bearings (0-359.99)
+    """
+    dists = []
+    dists_sec_deriv = []
+
+    target_bearing = cmps.read_bearing_16bit()
+    initial_time = time.time()
+
+    m.run_tank(speed, -speed)
+    while time.time() - initial_time < 10:
+        current_dist = tof.range_mm
+        current_bearing = cmps.read_bearing_16bit()
+
+        dists.append([current_dist, current_bearing])
+
+        i = len(dists) - 1
+        if i > 2:
+            dists_sec_deriv.append([dists[i - 2][0] + dists[i - 1][0] - 2 * dists[i][0], current_bearing])
+
+        error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+
+        if time.time() - initial_time > (mintime / 1000) and error < 5:
+            m.stop_all()
+            break
+        print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
+
+    largest_i = [0, 0]
+    for i in range(len(dists_sec_deriv)):
+        if dists_sec_deriv[i][0] > 120:
+            if dists_sec_deriv[i - 1][0] < dists_sec_deriv[i][0] and dists_sec_deriv[i + 1][0] < dists_sec_deriv[i][0]:
+                if dists_sec_deriv[largest_i[0]][0] < dists_sec_deriv[i][0]:
+                    if dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[largest_i[0]][0]:
+                        largest_i[1] = largest_i[0]
+                    largest_i[0] = i
+                elif dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[i][0]:
+                    largest_i[1] = i
+
+    return [
+        dists_sec_deriv[largest_i[0]][1],
+        dists_sec_deriv[largest_i[1]][1]
+    ]
+
 # ------------------
 # OBSTACLE AVOIDANCE
 # ------------------
@@ -517,6 +583,7 @@ def run_evac():
     victim_capture_qty = 0
     victim_check_counter = 0
     corner_check_counter = 0
+    expected_exit_side = None
     current_victim_start = time.time()
     last_victim_time = time.time()
 
@@ -571,6 +638,24 @@ def run_evac():
         # -------------
         if rescue_mode == "init":
             print("Entering Evacuation Zone")
+            # Drive a bit forward, then find the exit
+            m.run_tank_for_time(40, 40, 600)
+            potential_exits = evac_get_potential_exits(30, 2500)
+            print(f"Potential Exits: {potential_exits}")
+
+            # As we haven't moved around except for the initial forward,
+            # we should be able to assume the exit is the one with the greatest difference from the entry bearing
+            expected_entry_bearing = (start_of_evac_bearing - 180) % 360
+
+            ordered_exits = sorted(
+                [[potential_exit, bearing_difference(potential_exit, expected_entry_bearing)] for potential_exit in potential_exits],
+                key=lambda x: x[1],
+                reverse=True
+            )
+
+            expected_exit_side = "RIGHT" if (ordered_exits[0][0] - expected_entry_bearing) % 360 < 180 else "LEFT"
+            print(f"Expected Exit: {ordered_exits[0][0]} ({expected_exit_side})")
+            
             # Ensure robot won't drive out of the arena if exit is opposite to entry
             if tof.range_mm > 1300:
                 m.run_tank_for_time(40, 40, 2000)
@@ -616,8 +701,6 @@ def run_evac():
                 print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
 
             print(f"Lowest: {lowest_dist[0]} at {lowest_dist[1]}")
-
-            time.sleep(1)
 
             # Rotate to the bearing with the lowest distance
             target_bearing = lowest_dist[1]
@@ -1094,52 +1177,53 @@ def run_evac():
             m.run_tank_for_time(40, 40, 1200, True)
             align_to_bearing(cmps.read_bearing_16bit() - 180, 10, debug_prefix="ROTATE: ")
 
-            dists = []
-            dists_sec_deriv = []
+            potential_exits = evac_get_potential_exits(25, 3000)
 
-            target_bearing = cmps.read_bearing_16bit()
-            initial_time = time.time()
+            # Pick which is the exit based on entry evac bearing.
+            chosen_exit = None
+            expected_entry_bearing = (start_of_evac_bearing - 180) % 360
 
-            m.run_tank(25, -25)
-            while time.time() - initial_time < 10:
-                current_dist = tof.range_mm
-                current_bearing = cmps.read_bearing_16bit()
+            ordered_exits = sorted(
+                [[potential_exit, bearing_difference(potential_exit, expected_entry_bearing)] for potential_exit in potential_exits],
+                key=lambda x: x[1],
+                reverse=True
+            )
 
-                dists.append([current_dist, current_bearing])
+            # If no exit has a sufficient difference, choose based on the expected side
+            bearing_diff_threshold = 65
+            bearings_within_threshold = sum([x for x in ordered_exits if x[1] <= bearing_diff_threshold])
+            if bearings_within_threshold == 0:
+                print(f"All exits are within {bearing_diff_threshold}deg of flipped entry bearing")
 
-                i = len(dists) - 1
-                if i > 2:
-                    dists_sec_deriv.append([dists[i - 2][0] + dists[i - 1][0] - 2 * dists[i][0], current_bearing])
+                # In this case, the expected exit is the furthest from the entry bearing when going in the expected_exit_side direction
+                ordered_exits_left = sorted(
+                    ordered_exits,
+                    key=lambda x: (expected_entry_bearing + bearing_diff_threshold + x[0]) % 360,
+                    reverse=True
+                )
+                ordered_exits_right = sorted(
+                    ordered_exits,
+                    key=lambda x: (expected_entry_bearing - bearing_diff_threshold - x[0]) % 360,
+                    reverse=True
+                )
 
-                error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
+                chosen_exit = (ordered_exits_left if expected_exit_side == "left" else ordered_exits_right)[0][0]
+            # If one exit has a sufficient difference, choose that
+            elif bearings_within_threshold == 1:
+                print(f"Single exit over {bearing_diff_threshold}deg found")
+                chosen_exit = ordered_exits[0][0]
+            # If multiple exits have a sufficient difference, choose the largest and throw a warning, as this probably shouldn't happen
+            else:
+                print(f"WARNING: Multiple exits over {bearing_diff_threshold}deg found")
+                chosen_exit = ordered_exits[0][0]
 
-                if time.time() - initial_time > 3 and error < 5:
-                    m.stop_all()
-                    break
-                print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
-
-            largest_i = [0, 0]
-            for i in range(len(dists_sec_deriv)):
-                if dists_sec_deriv[i][0] > 120:
-                    if dists_sec_deriv[i - 1][0] < dists_sec_deriv[i][0] and dists_sec_deriv[i + 1][0] < dists_sec_deriv[i][0]:
-                        if dists_sec_deriv[largest_i[0]][0] < dists_sec_deriv[i][0]:
-                            if dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[largest_i[0]][0]:
-                                largest_i[1] = largest_i[0]
-                            largest_i[0] = i
-                        elif dists_sec_deriv[largest_i[1]][0] < dists_sec_deriv[i][0]:
-                            largest_i[1] = i
-
-            potential_exits = [
-                dists_sec_deriv[largest_i[0]][1],
-                dists_sec_deriv[largest_i[1]][1]
-            ]
-
-            # Pick which exit based on entry evac bearing. Potential exits - 180 degrees should be the entry bearing, so pick the one furthest from that
-            potential_exits_offsets = [(x - 180) % 360 for x in potential_exits]
-            bearing_diffs = [abs(exit_bearing - start_of_evac_bearing) for exit_bearing in potential_exits_offsets]
-            sorted_exits = [x for _, x in sorted(zip(bearing_diffs, potential_exits), key=lambda pair: pair[0], reverse=False)]
-
-            align_to_bearing(sorted_exits[0], 2, 10, "EXIT TARGET: ")
+            print("Potential Exits: ", potential_exits)
+            print("Expected Entry Bearing: ", expected_entry_bearing)
+            print("Expected Exit Side: ", expected_exit_side)
+            print("Ordered Exits: ", ordered_exits)
+            print("Chosen Exit: ", chosen_exit)
+ 
+            align_to_bearing(chosen_exit, 2, 10, "EXIT TARGET: ")
 
             m.stop_all()
             time.sleep(0.6)
@@ -1147,13 +1231,6 @@ def run_evac():
             time.sleep(0.3)
             if tof.range_mm < 500:
                 m.run_tank_for_time(35, -35, 130)
-
-            print("Potential Exits: ", potential_exits)
-            print("Potential Exits Offset:", potential_exits_offsets)
-            print("Bearing Diffs:", bearing_diffs)
-            print("Sorted Exits:", sorted_exits)
-            print("Bearing Dif UNPREF: ", (sorted_exits[1] - start_of_evac_bearing) % 360)
-            print("Bearing Dif TARGET: ", (sorted_exits[0] - start_of_evac_bearing) % 360)
 
             m.run_tank_for_time(35, 35, 1000, True)
             m.run_tank(35, 35)
@@ -1170,7 +1247,7 @@ def run_evac():
                     m.run_tank_for_time(-35, -35, 800)
                     
                     # If the bearing is greater than the target, go left until see the exit
-                    if (sorted_exits[0] - cmps.read_bearing_16bit()) % 360 > 180:
+                    if (chosen_exit - cmps.read_bearing_16bit()) % 360 > 180:
                         m.run_tank(-35, 35)
                         while tof.range_mm < 500:
                             pass
