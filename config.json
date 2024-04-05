@@ -15,7 +15,7 @@
                 "range": [0, 255],
                 "type": "int",
                 "data": {
-                    "val": 212
+                    "val": 185
                 }
             },
             "obstacle_line_threshold": {
@@ -24,7 +24,7 @@
                 "range": [0, 255],
                 "type": "int",
                 "data": {
-                    "val": 167
+                    "val": 173
                 }
             }
         }
@@ -44,10 +44,10 @@
                 "range": [0, 255],
                 "type": "hsv",
                 "data": {
-                    "L-H": 40,
-                    "L-S": 55,
-                    "L-V": 95,
-                    "H-H": 90,
+                    "L-H": 50,
+                    "L-S": 130,
+                    "L-V": 116,
+                    "H-H": 103,
                     "H-S": 255,
                     "H-V": 220
                 }

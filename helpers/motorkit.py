@@ -14,8 +14,8 @@ conf_tank = {
 }
 
 conf_directions = [1, -1, -1, -1] # Motor directions so that a positive speed will move the robot forward
-conf_rotation = [50, 47, 50, 47] # The speed for each motor where 1 second correlates to 1 rotation
-conf_wheel_size = [60, 50, 50, 50] # Wheel sizes in mm
+conf_rotation = [46, 50, 47, 45] # The speed for each motor where 1 second correlates to 1 rotation
+conf_wheel_size = [60, 50, 50, 60] # Wheel sizes in mm
 
 def normalise_speed(target: int, input_speed: float) -> float:
     """
