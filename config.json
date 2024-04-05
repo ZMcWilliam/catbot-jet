@@ -18,6 +18,15 @@
                     "val": 185
                 }
             },
+            "black_silver_threshold": {
+                "title": "Blk Tresh Silver",
+                "description": "Value used to get a binary image of silver",
+                "range": [0, 255],
+                "type": "int",
+                "data": {
+                    "val": 195
+                }
+            },
             "obstacle_line_threshold": {
                 "title": "Obs Tresh Line",
                 "description": "Value used to get a binary image of the line before avoiding an obstacle",

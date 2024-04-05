@@ -137,7 +137,7 @@ class CameraStream:
             raise Exception(f"[CAMERA] C{self.num} has no conf for processing")
 
         resized = self.resize_image(image)
-        resized_silver = self.resize_image(image, offset_y=0)
+        resized_silver = self.resize_image(image, offset_y=40)
         # resized = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
 
         # Convert image to grayscale/HSV
@@ -158,7 +158,8 @@ class CameraStream:
         binary = ((gray_scaled > black_line_threshold) * 255).astype(np.uint8)
         binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
-        silver_binary = ((gray_silver_scaled > black_line_threshold) * 255).astype(np.uint8)
+        black_silver_threshold = self.processing_conf["black_silver_threshold"]
+        silver_binary = ((gray_silver_scaled > black_silver_threshold) * 255).astype(np.uint8)
         silver_binary = cv2.morphologyEx(silver_binary, cv2.MORPH_OPEN, np.ones((7, 7), np.uint8))
 
         # Find green in the image

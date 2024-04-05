@@ -125,6 +125,7 @@ def show_selected_tab(tab_id):
             "calibration_map_obst": calibration_map_obst,
             "calibration_map_silver": calibration_map_silver,
             "black_line_threshold": config_data["main"]["configs"]["black_line_threshold"]["data"]["val"],
+            "black_silver_threshold": config_data["main"]["configs"]["black_silver_threshold"]["data"]["val"],
             "obstacle_line_threshold": config_data["main"]["configs"]["obstacle_line_threshold"]["data"]["val"],
             "green_turn_hsv_threshold": [np.array(bound) for bound in [
                 [
@@ -163,6 +164,7 @@ def show_selected_tab(tab_id):
             "calibration_map": config_values["calibration_map"],
             "calibration_map_silver": config_values["calibration_map_silver"],
             "black_line_threshold": config_values["black_line_threshold"],
+            "black_silver_threshold": config_values["black_silver_threshold"],
             "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
             "red_hsv_threshold": config_values["red_hsv_threshold"],
         })

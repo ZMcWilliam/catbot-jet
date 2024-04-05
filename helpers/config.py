@@ -33,6 +33,7 @@ for section in config_data_raw.values():
 
 config_values = {
     "black_line_threshold": config_data["black_line_threshold"],
+    "black_silver_threshold": config_data["black_silver_threshold"],
     "obstacle_line_threshold": config_data["obstacle_line_threshold"],
     "green_turn_hsv_threshold": config_data["green_turn_hsv_threshold"],
     "red_hsv_threshold": config_data["red_hsv_threshold"],
@@ -59,6 +60,7 @@ processing_conf = {
     "calibration_map": calibration_map,
     "calibration_map_silver": calibration_map_silver,
     "black_line_threshold": config_values["black_line_threshold"],
+    "black_silver_threshold": config_values["black_silver_threshold"],
     "green_turn_hsv_threshold": config_values["green_turn_hsv_threshold"],
     "red_hsv_threshold": config_values["red_hsv_threshold"],
 }
