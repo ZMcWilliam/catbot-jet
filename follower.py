@@ -239,6 +239,22 @@ def debug_state(mode=None) -> bool:
 
     return DEBUGGER # and debug_switch.value
 
+def is_pitch_flat(pitch: int, precise: bool) -> bool:
+    """
+    Returns whether the pitch is flat.
+
+    Args:
+        pitch (int): The pitch to check.
+        precise (bool): Whether to be precise, or allow for more of a difference
+    
+    Returns:
+        bool: True if the pitch is flat, False otherwise.
+    """
+    if precise:
+        return pitch_flat - pitch_flat_error < pitch < pitch_flat + pitch_flat_error
+
+    return pitch_flat - (pitch_flat_error + 15) < pitch < pitch_flat + (pitch_flat_error + 15)
+
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
     """
     Aligns to the given bearing.
@@ -256,6 +272,11 @@ def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, 
     speed_adj = 0
     start_time = time.time()
     while time.time() - start_time < timeout:
+        if not is_pitch_flat(cmps.read_pitch(), False):
+            print("Tilted: Exiting Early")
+            m.stop_all()
+            return False
+
         current_bearing = cmps.read_bearing_16bit()
         error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
 
@@ -309,6 +330,11 @@ def run_to_dist(target_dist: int, cutoff_error: int = 5, speed: int = 40, speed_
     """
     start_time = time.time()
     while time.time() - start_time < (timeout / 1000):
+        if not is_pitch_flat(cmps.read_pitch(), False):
+            print("Tilted: Exiting Early")
+            m.stop_all()
+            return False
+
         front_dist = tof.range_mm
 
         if use_min and 0 < front_dist <= target_dist:
@@ -366,7 +392,11 @@ def evac_get_potential_exits(speed: int = 25, mintime: int = 3000):
     initial_time = time.time()
 
     m.run_tank(speed, -speed)
-    while time.time() - initial_time < 10:
+        if not is_pitch_flat(cmps.read_pitch(), False):
+            print("Tilted: Exiting Early")
+            m.stop_all()
+            return [0, 0]
+
         current_dist = tof.range_mm
         current_bearing = cmps.read_bearing_16bit()
 
@@ -514,6 +544,11 @@ def avoid_obstacle() -> None:
 
     # Start checking for a line while continuing to rotate around the obstacle
     while True:
+        if not is_pitch_flat(cmps.read_pitch(), False):
+            print("Tilted: Exiting Early")
+            m.stop_all()
+            return False
+
         frame_processed = cam.read_stream_processed()
         
         if debug_state():
@@ -621,6 +656,11 @@ def run_evac():
         if int(time.time() - evac_start) % 10 == 0:
             print(f"EVAC MODE: {rescue_mode} EVAC TIME: {int(time.time() - evac_start)}")
 
+        if not is_pitch_flat(cmps.read_pitch(), False):
+            print("Tilted: EVAC Exiting Early")
+            m.stop_all()
+            return
+
         frames_evac += 1
 
         fpsEvac = int(frames_evac/(time.time()-fps_time_evac))
@@ -642,6 +682,11 @@ def run_evac():
             m.run_tank_for_time(40, 40, 600)
             potential_exits = evac_get_potential_exits(30, 2500)
             print(f"Potential Exits: {potential_exits}")
+
+            if not is_pitch_flat(cmps.read_pitch(), False):
+                print("Tilted: EVAC Exiting Early")
+                m.stop_all()
+                return
 
             # As we haven't moved around except for the initial forward,
             # we should be able to assume the exit is the one with the greatest difference from the entry bearing
@@ -1457,7 +1502,7 @@ while program_active:
                     sum([side in sides_touching for side in ["bottom", "left", "right"]]) == 3,
                     total_green_area < 500,
                     tof.range_mm > 100,
-                    pitch_flat - pitch_flat_error < current_pitch < pitch_flat + pitch_flat_error
+                    is_pitch_flat(current_pitch, True)
                 ]
 
                 if sum(checks) == len(checks):
