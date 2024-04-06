@@ -85,6 +85,7 @@ current_linefollowing_state = None
 intersection_state_debug = ["", time.time()]
 red_stop_check = 0
 evac_detect_check = 0
+last_evac_exit = time.time() - 10
 
 silver_prediction = False
 silver_first_detect_time = time.time() - 60
@@ -1398,7 +1399,15 @@ while program_active:
             front_dist = tof.range_mm
             if 0 < front_dist < obstacle_threshold + 5:
                 print("Confirmed.")
-                avoid_obstacle()
+                if time.time() - last_evac_exit < 2:
+                    print("Invalid Evac Exit?")
+                    time.sleep(1)
+                    m.run_tank_for_time(-40, -40, 500, True)
+                    m.run_tank_for_time(-40, 40, 800, True)
+                    m.run_tank_for_time(40, 40, 200, True)
+                    time.sleep(1)
+                else:
+                    avoid_obstacle()
             else:
                 print("False positive, continuing.")
             continue
@@ -1540,6 +1549,7 @@ while program_active:
         if silver_prediction >= 5:
             print("Silver Confirmed")
             run_evac()
+            last_evac_exit = time.time()
             silver_prediction = 0
             continue
         elif silver_prediction > 1:
