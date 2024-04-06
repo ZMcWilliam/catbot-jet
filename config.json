@@ -24,7 +24,7 @@
                 "range": [0, 255],
                 "type": "int",
                 "data": {
-                    "val": 195
+                    "val": 249
                 }
             },
             "obstacle_line_threshold": {

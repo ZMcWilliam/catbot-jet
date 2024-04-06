@@ -1498,7 +1498,7 @@ while program_active:
                 # - The TOF sensor is not detecting anything within 10cm
                 # - The current pitch of the robot is within pitch_flat +- pitch_flat_error
                 checks = [
-                    np.count_nonzero(img0_silver_chosen[0:top_check_threshold] == 255) / (img0_silver_chosen.shape[1] * top_check_threshold) > 0.95,
+                    np.count_nonzero(img0_binary[0:top_check_threshold] == 255) / (img0_binary.shape[1] * top_check_threshold) > 0.95,
                     sum([side in sides_touching for side in ["bottom", "left", "right"]]) == 3,
                     total_green_area < 500,
                     tof.range_mm > 100,
