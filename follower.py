@@ -50,11 +50,11 @@ error_weight = 0.5                  # Weight of the error value when calculating
 black_contour_threshold = 4000      # Minimum area of a contour to be considered valid
 turning_line_iterations = 7         # While doing a green turn, dilate/erode by this much to fill in gaps
 
-KP = 1.2                            # Proportional gain
+KP = 1.25                            # Proportional gain
 KI = 0                              # Integral gain
 KD = 0.1                            # Derivative gain
 
-follower_speed = 37                 # Base speed of the line follower
+follower_speed = 30                 # Base speed of the line follower
 obstacle_threshold = 60             # Minimum distance threshold for obstacles (mm)
 
 pitch_flat = 58
