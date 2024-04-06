@@ -390,9 +390,12 @@ def evac_get_potential_exits(speed: int = 25, mintime: int = 3000):
     dists_sec_deriv = []
 
     target_bearing = cmps.read_bearing_16bit()
+    last_bearing = target_bearing
     initial_time = time.time()
+    last_bearing_change_time = initial_time
 
     m.run_tank(speed, -speed)
+    while time.time() - initial_time < 20:
         if not is_pitch_flat(cmps.read_pitch(), False):
             print("Tilted: Exiting Early")
             m.stop_all()
@@ -412,6 +415,21 @@ def evac_get_potential_exits(speed: int = 25, mintime: int = 3000):
         if time.time() - initial_time > (mintime / 1000) and error < 5:
             m.stop_all()
             break
+
+        # If we're stuck on the same bearing, then back up slightly as we are probably stuck
+        if current_bearing != last_bearing:
+            last_bearing_change_time = time.time()
+        
+        if time.time() - last_bearing_change_time > 0.3:
+            print(f"SAME BEARING {tof.range_mm}")
+            if tof.range_mm < 1000:
+                m.run_tank_for_time(-40, -40, 800, True)
+            else:
+                m.run_tank_for_time(40, 40, 800, True)
+            m.run_tank(speed, -speed)
+            last_bearing_change_time = time.time()
+
+        last_bearing = current_bearing
         print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
 
     largest_i = [0, 0]
@@ -608,6 +626,7 @@ def avoid_obstacle() -> None:
 def run_evac():
     global fps_camera
     global program_active
+    global current_steering
     global led_mode
     
     led_mode = "evac-load-a"
@@ -634,19 +653,26 @@ def run_evac():
     led_mode = "evac-load-b"
 
     print("EVAC: Waiting for first inference of models...")
-    frame_processed = cam.read_stream_processed()
-    img0_raw = frame_processed["raw"].copy()
-    img0_resized_evac = cv2.resize(img0_raw, (160, 120))
+    try:
+        frame_processed = cam.read_stream_processed()
+        img0_raw = frame_processed["raw"].copy()
+        img0_resized_evac = cv2.resize(img0_raw, (160, 120))
 
-    evac_start = time.time()
-    model_victims(img0_resized_evac)
-    print("Loaded Victims Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+        evac_start = time.time()
+        model_victims(img0_resized_evac)
+        print("Loaded Victims Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
 
-    led_mode = "evac-load-c"
+        led_mode = "evac-load-c"
 
-    evac_start = time.time()
-    model_corners(img0_resized_evac)
-    print("Loaded Corners Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+        evac_start = time.time()
+        model_corners(img0_resized_evac)
+        print("Loaded Corners Model. Took " + str(int((time.time() - evac_start) * 1000)) + "ms")
+    except Exception as e:
+        # Not sure why this happens yet, but sometimes the entire program just crashes here ...
+        print("Failed to load models", e)
+        traceback.print_exc()
+        time.sleep(2)
+        return
 
     led_mode = "running"
 
@@ -680,7 +706,7 @@ def run_evac():
         if rescue_mode == "init":
             print("Entering Evacuation Zone")
             # Drive a bit forward, then find the exit
-            m.run_tank_for_time(40, 40, 600)
+            m.run_tank_for_time(40, 40, 1700, True)
             potential_exits = evac_get_potential_exits(30, 2500)
             print(f"Potential Exits: {potential_exits}")
 
@@ -704,56 +730,19 @@ def run_evac():
             
             # Ensure robot won't drive out of the arena if exit is opposite to entry
             if tof.range_mm > 1300:
-                m.run_tank_for_time(40, 40, 2000)
-                align_to_bearing(cmps.read_bearing_16bit() - 90, 10, debug_prefix="EVAC ENTRY: ")
-                run_to_dist(130, 5, 40, 25, 8000, False)
-                m.run_tank_for_time(-40, -40, 2000)
-            else:
-                initial_time = time.time()
-                run_to_dist(130, 5, 40, 25, 8000, False)
-                if time.time() - initial_time > 4:
-                    m.run_tank_for_time(-40, -40, 2000)
-                else: # Probably ran into a wall, let's try force align to it
-                    for i in range(6): # avoid climbing a wall lol
-                        m.run_tank_for_time(30, 30, 500)
-                        time.sleep(0.1)
-                    m.run_tank_for_time(-40, -40, 1000)
-
-            # Rotate and find the bearing matching the smallest distance
-            target_bearing = cmps.read_bearing_16bit()
-
-            lowest_dist = [tof.range_mm, target_bearing]
+                m.run_tank_for_time(40, 40, 1000)
+                while tof.range_mm > 1300:
+                    align_to_bearing(cmps.read_bearing_16bit() - 90, 10, debug_prefix="EVAC ENTRY: ")
 
             initial_time = time.time()
-            last_pass_time = time.time()
-            passes = 0
-
-            m.run_tank(30, -30)
-            while time.time() - initial_time < 10:
-                current_dist = tof.range_mm
-                if current_dist < lowest_dist[0]:
-                    lowest_dist = [current_dist, cmps.read_bearing_16bit()]
-
-                current_bearing = cmps.read_bearing_16bit()
-                error = min(abs(current_bearing - target_bearing), abs(target_bearing - current_bearing + 360))
-
-                if (time.time() - last_pass_time > 3 and error < 5) or time.time() - last_pass_time > 8:
-                    if passes < 1:
-                        last_pass_time = time.time()
-                        passes += 1
-                    else:
-                        m.stop_all()
-                        break
-                print(f"Dist: {current_dist:.2f}\tBearing: {current_bearing:.2f}\tError: {error:.2f}")
-
-            print(f"Lowest: {lowest_dist[0]} at {lowest_dist[1]}")
-
-            # Rotate to the bearing with the lowest distance
-            target_bearing = lowest_dist[1]
-            align_to_bearing(target_bearing, 2, 10, "ROTATE: ")
-
-            if tof.range_mm > 1000:
-                align_to_bearing(target_bearing + 90, 2, 10, "ROTATE: ")
+            run_to_dist(130, 5, 40, 25, 8000, False)
+            if time.time() - initial_time > 4:
+                m.run_tank_for_time(-40, -40, 2000)
+            else: # Probably ran into a wall, let's try force align to it
+                for i in range(6): # avoid climbing a wall lol
+                    m.run_tank_for_time(30, 30, 500)
+                    time.sleep(0.1)
+                m.run_tank_for_time(-40, -40, 1000)
 
             if 0 < tof.range_mm < 1000:
                 run_to_dist(400, 5, 40, 25, 5000, False)
@@ -1237,7 +1226,7 @@ def run_evac():
 
             # If no exit has a sufficient difference, choose based on the expected side
             bearing_diff_threshold = 65
-            bearings_within_threshold = sum([x for x in ordered_exits if x[1] <= bearing_diff_threshold])
+            bearings_within_threshold = len([x for x in ordered_exits if x[1] <= bearing_diff_threshold])
             if bearings_within_threshold == 0:
                 print(f"All exits are within {bearing_diff_threshold}deg of flipped entry bearing")
 
@@ -1273,19 +1262,25 @@ def run_evac():
 
             m.stop_all()
             time.sleep(0.6)
-            m.run_tank_for_time(-35, 35, 100)
+            if tof.range_mm < 500:
+                m.run_tank_for_time(35, -35, 200)
+            else:
+                m.run_tank_for_time(-35, 35, 100)
             time.sleep(0.3)
             if tof.range_mm < 500:
                 m.run_tank_for_time(35, -35, 130)
 
-            m.run_tank_for_time(35, 35, 1000, True)
-            m.run_tank(35, 35)
+            m.run_tank_for_time(35, 35, 1500, True)
+
+            print("READY FOR EXIT")
+            time.sleep(1)
             found_line = False
             start_time_exit = time.time()
             while True:
-                if time.time() - start_time_exit > 1.8:
+                m.run_tank(35, 35)
+                if time.time() - start_time_exit > 5:
                     m.stop_all()
-                    time.sleep(2)
+                    time.sleep(1)
                     break
 
                 if tof.range_mm < 60:
@@ -1308,7 +1303,7 @@ def run_evac():
                     
                     m.run_tank_for_time(35, 35, 400)
                     time.sleep(1)
-                    break
+                    break # TODO Find the exit again
 
                 frame_processed = cam.read_stream_processed()
                 img0 = frame_processed["resized"]
@@ -1329,6 +1324,7 @@ def run_evac():
 
                 if found_line and meets_target:
                     m.run_tank_for_time(40, 40, 300, True)
+                    time.sleep(1)
                     break
                 
                 if meets_target:
@@ -1341,6 +1337,9 @@ def run_evac():
                 if k & 0xFF == ord('q'):
                     program_active = False
                     break
+            
+            current_steering = 0
+            # TODO Attempt to align straight, possibly either cloest 90deg from entry angle OR do it based on camera and align to the black
             break
 
 # ------------------------
