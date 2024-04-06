@@ -1502,12 +1502,14 @@ while program_active:
                 # As silver makes the image output inconsistent, we can check that:
                 # - The top 20px of the image must be 95% white
                 # - A black comtour that touches the bottom, left, and right of the image must exist
+                # - No black contour with >500px area should touch the top of the image
                 # - Very little to no green is in the image
                 # - The TOF sensor is not detecting anything within 10cm
                 # - The current pitch of the robot is within pitch_flat +- pitch_flat_error
                 checks = [
                     np.count_nonzero(img0_binary[0:top_check_threshold] == 255) / (img0_binary.shape[1] * top_check_threshold) > 0.95,
                     sum([side in sides_touching for side in ["bottom", "left", "right"]]) == 3,
+                    "top" not in sides_touching,
                     total_green_area < 500,
                     tof.range_mm > 100,
                     is_pitch_flat(current_pitch, True)
