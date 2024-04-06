@@ -98,10 +98,16 @@ while runner_active:
         input_state = GPIO.input(RUN_PIN)
         GPIO.output(LED_R_PIN, GPIO.LOW if input_state else GPIO.HIGH)
         if follower_process is not None:
-            process_state = psutil.pid_exists(follower_process_id)
-            if input_state and not process_state:
+            active_process = None
+            try:
+                active_process = psutil.Process(follower_process_id)
+            except psutil.NoSuchProcess:
+                pass
+
+            if input_state and (active_process is not None and active_process.status() == "zombie"):
                 print("\033[1;33m[RUNNER]\033[1;m \033[1;37mResurrecting Follower...")
                 state = 0
+                follower_process = None
         if input_state and state == 0:
             time.sleep(0.4)
             state = 1
