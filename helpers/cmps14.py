@@ -110,7 +110,7 @@ class CMPS14:
             int: Pitch angle. (+/- 90°)
         """
         try:
-            self.last_values["pitch"] = self.read_byte(0x04)
+            self.last_values["pitch"] = (self.read_byte(0x04) + 50) % 255
         except OSError as e:
             print("[WARN] OSError while reading pitch. Returning last value.")
             print(e)

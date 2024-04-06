@@ -57,10 +57,10 @@ KD = 0.1                            # Derivative gain
 follower_speed = 37                 # Base speed of the line follower
 obstacle_threshold = 60             # Minimum distance threshold for obstacles (mm)
 
-pitch_flat = 8
+pitch_flat = 58
 pitch_flat_error = 7 # Allow +- this error for flat
-min_pitch_ramp_up_slight = 20
-min_pitch_ramp_up_full = 30
+min_pitch_ramp_up_slight = 70
+min_pitch_ramp_up_full = 80
 
 led_b_pin = "GP124" # TEGRA_SOC
 
@@ -253,7 +253,7 @@ def is_pitch_flat(pitch: int, precise: bool) -> bool:
     if precise:
         return pitch_flat - pitch_flat_error < pitch < pitch_flat + pitch_flat_error
 
-    return pitch_flat - (pitch_flat_error + 15) < pitch < pitch_flat + (pitch_flat_error + 15)
+    return pitch_flat - (pitch_flat_error + 20) < pitch < pitch_flat + (pitch_flat_error + 20)
 
 def align_to_bearing(target_bearing: int, cutoff_error: int, timeout: int = 10, debug_prefix: str = "") -> bool:
     """
