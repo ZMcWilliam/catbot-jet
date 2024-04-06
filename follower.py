@@ -7,7 +7,7 @@
 
 # RoboCup Junior Rescue Line 2023 - Asia Pacific (South Korea)
 # RoboCup Junior Rescue Line 2024 - Singapore Open
-# https://github.com/zmcwilliam/catbot-rcjap
+# https://github.com/zmcwilliam/catbot-jet
 
 print("Starting CatBot")
 import time
