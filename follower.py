@@ -468,7 +468,7 @@ def avoid_obstacle() -> None:
 
     print("START OF OBSTACLE")
     # run_to_dist(30, 2, 30, 23, 1200, False)
-    servo.cam.to(45)
+    servo.cam.to(38)
     m.run_tank_for_time(-40, -40, 200)
     time.sleep(0.8)
 
