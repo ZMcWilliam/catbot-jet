@@ -1,4 +1,5 @@
-GitPython
+ultralytics
+tensorflow[and-cuda]
 colorama
 smbus2
 imutils
